@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using System.Security;
 namespace VideoPlayer
 {
   /*/
@@ -68,6 +69,7 @@ namespace VideoPlayer
       ref RECT lpPaint
     );
 
+    [SuppressUnmanagedCodeSecurity]
     [DllImport("gdi32.dll", SetLastError = true)]
     public static extern int StretchDIBits(
       IntPtr hdc,

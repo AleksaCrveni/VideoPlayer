@@ -2,13 +2,18 @@
 using static VideoPlayer.Win32Defines;
 using static VideoPlayer.Win32;
 using System.Runtime.InteropServices;
+using System.Buffers.Binary;
 
-int RENDER_HEIGHT = 800;
-int RENDER_WIDTH = 800;
+int RENDER_HEIGHT = 720;
+int RENDER_WIDTH = 1024;
 byte[] globalBuffer = new byte[RENDER_WIDTH * RENDER_HEIGHT * 4];
 GCHandle globalBufferHandle = GCHandle.Alloc(globalBuffer, GCHandleType.Pinned);
 BITMAPINFO biInfo = new BITMAPINFO();
 
+// temp
+int blueOffset = 0;
+int greenOffset = 0;
+//~~~~~~~~~~~~~~~~~~
 bool running = true;
 WNDPROC wndProc;
 IntPtr CallBack(IntPtr hWnd, uint msg, UIntPtr wParam, IntPtr lParam)
@@ -29,6 +34,7 @@ IntPtr CallBack(IntPtr hWnd, uint msg, UIntPtr wParam, IntPtr lParam)
       Console.WriteLine("WM_ACTIVATEAPP");
       break;
     case var _ when msg == WM_PAINT:
+      Console.WriteLine("WM_PAINT");
       PAINTSTRUCT Paint = new PAINTSTRUCT();
       IntPtr deviceContext = BeginPaint(hWnd, ref Paint);
       int X = Paint.rcPaint.left;
@@ -73,8 +79,8 @@ IntPtr window = CreateWindowExW(
   dwStyle: (uint)(WS_OVERLAPPEDWINDOW | WS_VISIBLE),
   x: CW_USEDEFAULT,
   y: CW_USEDEFAULT,
-  nWidth: RENDER_HEIGHT,
-  nHeight: RENDER_WIDTH,
+  nWidth: CW_USEDEFAULT,
+  nHeight: CW_USEDEFAULT,
   hWndParent: 0,
   hMenu: 0,
   hInstance: 0,
@@ -117,8 +123,13 @@ while (running)
     DispatchMessageW(ref Message);
   }
 
+  (int height, int width) wSize = Win32GetWindowDimension(window);
+  Win32CopyBufferToWindow(deviceContext, wSize.width, wSize.height, globalBufferHandle.AddrOfPinnedObject());
+
+  blueOffset++;
+  greenOffset += 2;
+  RenderWeirdGradientIntoBuffer();
 }
-Console.ReadKey();
 return 0;
 
 (int height, int width) Win32GetWindowDimension(IntPtr window)
@@ -142,5 +153,22 @@ void Win32CopyBufferToWindow(IntPtr deviceContext, int wWidth, int wHeight, IntP
   if (result == 0)
   {
     Console.WriteLine("Error in StrechDIBits: ", result);
+  }
+}
+
+void RenderWeirdGradientIntoBuffer()
+{
+  Span<byte> sp = globalBuffer.AsSpan();
+  for (int Y = 0; Y < RENDER_HEIGHT; Y++)
+  {
+    for (int X = 0; X < RENDER_WIDTH; X++)
+    {
+      byte Blue = (byte)(X + blueOffset);
+      byte Green = (byte)(Y + greenOffset);
+      uint val = (((uint)Green << 8) | Blue);
+      int offset = (Y * RENDER_WIDTH + X) * 4;
+      // not efficient but w/e
+      BinaryPrimitives.WriteUInt32LittleEndian(sp.Slice(offset, 4), val);
+    }
   }
 }
