@@ -109,7 +109,7 @@ IntPtr deviceContext = GetDC(window);
 running = true;
 while (running)
 {
-  MSG Message = new MSG();
+  MSG Message = new MSG();  
   while (PeekMessageW(ref Message, 0, 0, 0, PM_REMOVE))
   {
     if (Message.message == WM_QUIT)
