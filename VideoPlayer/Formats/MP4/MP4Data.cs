@@ -1,6 +1,5 @@
-﻿
-
-using System.Numerics;
+﻿using System.ComponentModel.Design;
+using VideoPlayer.Readers;
 
 namespace VideoPlayer.Formats.MP4
 {
@@ -68,6 +67,8 @@ namespace VideoPlayer.Formats.MP4
 
   public class MP4_MovieBox : MP4_Box
   {
+    public MP4_MovieHeaderBox Header;
+    public List<MP4_TrackBox> Tracks;
     public MP4_MovieBox(MP4_BoxType boxType, sbyte[]? extended_type = null) : base(boxType, extended_type)
     {
 
@@ -77,8 +78,8 @@ namespace VideoPlayer.Formats.MP4
   {
     public MP4_MovieHeaderVData64 Data64;
     public MP4_MovieHeaderVData32 Data32;
-    public double Rate;
-    public double Volume;
+    public double Rate = ISOParser.ParseFixed1616(0x00010000);
+    public double Volume = 1.0;
     // skip 10 bytes of reserved data
 
     /*
@@ -92,7 +93,7 @@ namespace VideoPlayer.Formats.MP4
      * except for u, v and w, which are stored as 2.30 fixed-point values.
     */
 
-    public double[,] Matrix = { { 0x00010000, 0, 0 }, { 0, 0x00010000, 0 }, { 0, 0, 0x40000000 } };
+    public double[,] Matrix = { { ISOParser.ParseFixed1616(0x00010000), 0, 0 }, { 0, ISOParser.ParseFixed1616(0x00010000), 0 }, { 0, 0, ISOParser.ParseFixed0230(0x40000000) } };
     // skip 6 * 4 bytes for pre_defined
     public uint NextTrackID;
     public MP4_MovieHeaderBox(byte v) : base(MP4_BoxType.mvhd, v, 0)
@@ -106,6 +107,59 @@ namespace VideoPlayer.Formats.MP4
     }
 
 
+  }
+
+  public class MP4_MovieHeaderVData64
+  {
+    public ulong CreationTime;
+    public ulong ModificationTime;
+    public uint Timescale;
+    public ulong Duration;
+  }
+
+  public class MP4_MovieHeaderVData32
+  {
+    public uint CreationTime;
+    public uint ModificationTime;
+    public uint Timescale;
+    public uint Duration;
+  }
+
+  public class MP4_TrackBox : MP4_Box
+  {
+    public MP4_TrackHeaderBox Header;
+    public MP4_EditBox EditBox;
+    public MP4_MediaBox MediaBox;
+    public MP4_TrackBox() : base(MP4_BoxType.trak)
+    {
+    }
+  }
+
+  public class MP4_TrackHeaderBox : MP4_FullBox
+  {
+    public MP4_TrackHeaderVData64 Data64;
+    public MP4_TrackHeaderVData32 Data32;
+    public short Layer;
+    public short AlternateGroup;
+    public double Volume = 1.0d;
+    public double[,] Matrix = { { ISOParser.ParseFixed1616(0x00010000), 0, 0 }, { 0, ISOParser.ParseFixed1616(0x00010000), 0 }, { 0, 0, ISOParser.ParseFixed0230(0x40000000) } };
+    public double Width;
+    public double Height;
+    public MP4_TrackHeaderBox(byte v, uint f) : base(MP4_BoxType.tkhd, v, f)
+    {
+      if (v == 1)
+      {
+        Data64 = new MP4_TrackHeaderVData64();
+      }
+      else if (v == 0)
+      {
+        Data32 = new MP4_TrackHeaderVData32();
+      }
+      else
+      {
+        throw new InvalidDataException("Version supported!");
+      }
+    }
   }
 
   public class MP4_TrackHeaderVData64
@@ -126,7 +180,62 @@ namespace VideoPlayer.Formats.MP4
     public uint Duration;
   }
 
-  public class MP4_MovieHeaderVData64
+  public class MP4_EditBox : MP4_Box
+  {
+    public MP4_EditListBox EditList;
+    public MP4_EditBox() : base(MP4_BoxType.edts) { }
+  }
+
+  public class MP4_EditListBox : MP4_FullBox
+  {
+    public uint EntryCount;
+    public MP4_EditListData64 Data64;
+    public MP4_EditListData32 Data32;
+    public short MediaRateInteger;
+    public short MediaRateFraction = 0;
+    public MP4_EditListBox(byte v) : base(MP4_BoxType.elst, v, 0)
+    {
+
+    }
+  }
+
+  public class MP4_EditListData64
+  {
+    public ulong SegmentDuration;
+    public long MediaTime;
+  }
+
+  public class MP4_EditListData32
+  {
+    public uint SegmentDuration;
+    public int MediaTime;
+  }
+
+  public class MP4_MediaBox : MP4_Box
+  {
+    public MP4_MediaHeaderBox Header;
+    public MP4_HandlerRefBox Handler;
+    public MP4_MediaInformationBox Info;
+    public MP4_MediaBox() : base(MP4_BoxType.mdia) { }
+  }
+
+  public class MP4_MediaHeaderBox : MP4_FullBox
+  {
+    public MP4_MediaHeaderData64 Data64;
+    public MP4_MediaHeaderData32 Data32;
+    public ushort Language; // this is actually 3 5 bit ints and 1 bit of padding on the start
+    public MP4_MediaHeaderBox(byte v) : base(MP4_BoxType.mdhd, v, 0)
+    {
+      if (v == 1)
+        Data64 = new MP4_MediaHeaderData64();
+      else if (v == 0)
+        Data32 = new MP4_MediaHeaderData32();
+      else
+        throw new InvalidDataException("Invalid version!");
+    }
+  }
+
+  public class MP4_MediaHeaderData64
   {
     public ulong CreationTime;
     public ulong ModificationTime;
@@ -134,11 +243,95 @@ namespace VideoPlayer.Formats.MP4
     public ulong Duration;
   }
 
-  public class MP4_MovieHeaderVData32
+  public class MP4_MediaHeaderData32
   {
     public uint CreationTime;
     public uint ModificationTime;
     public uint Timescale;
     public uint Duration;
   }
+
+  public class MP4_HandlerRefBox : MP4_FullBox
+  {
+    public MP4_HanlderType HandlerType;
+    public string Name;
+    public MP4_HandlerRefBox() : base(MP4_BoxType.hdlr, 0, 0) { }
+  }
+
+  public class MP4_MediaInformationBox : MP4_Box
+  {
+    public IMediaInformationHeader Header;
+    public MP4_MediaInformationHeaderType HeaderType; // for casting IMediaInformationHeader
+    public MP4_DataInformationBox DataInfo;
+    public MP4_SampleTableBox SampleTable;
+    public MP4_MediaInformationBox() : base(MP4_BoxType.minf) { }
+  }
+  public interface IMediaInformationHeader { }
+  public class VideoMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
+  {
+    public MP4_VideoMediaHeaderGraphicsMode GraphicsMode = MP4_VideoMediaHeaderGraphicsMode.copy;
+    public ushort[] OpColor = [0, 0, 0];
+    public VideoMediaHeaderBox() : base(MP4_BoxType.vmhd, 0, 1) { }
+  }
+
+  public class SoundMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
+  {
+    // Fixed 88. 0 is centre, -1.0 is full left and 1.0 is full right
+    public double Balanced = 0;
+    public SoundMediaHeaderBox() : base(MP4_BoxType.smhd, 0, 0) { }
+  }
+
+  public class HintMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
+  {
+    // PDU -> Protocol Data Unit
+    public ushort MaxPDUSize;
+    public ushort AvgPDUSize;
+    public uint MaxBitrate;
+    public uint AvgBitrate;
+    public HintMediaHeaderBox() : base(MP4_BoxType.hmhd, 0, 0) { }
+  }
+
+  public class NullMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
+  {
+    public NullMediaHeaderBox() : base(MP4_BoxType.nmhd, 0, 0) { }
+  }
+
+  // I am not sure if this HAS to be dref containing urn/url or it can just be single url/urn
+  public class MP4_DataInformationBox : MP4_Box
+  {
+    public MP4_DataReferenceBox DataReference;
+    public MP4_DataInformationBox() : base(MP4_BoxType.dinf) { }
+  }
+  public interface IDataEntry
+  {
+    public MP4_BoxType GetType();
+  }
+
+  public class MP4_DataReferenceBox : MP4_FullBox
+  {
+    IDataEntry[] Entries;
+    public MP4_DataReferenceBox() : base(MP4_BoxType.dref, 0, 0) { }
+  }
+
+  public class MP4_DataEntryUrlBox : MP4_FullBox, IDataEntry
+  {
+    public string Location;
+    public MP4_DataEntryUrlBox(uint f) : base(MP4_BoxType.url, 0, f) { }
+    public new MP4_BoxType GetType() => base.Type;
+  }
+  public class MP4_DataEntryUrnBox : MP4_FullBox, IDataEntry
+  {
+    public string Name;
+    public string Location;
+    public MP4_DataEntryUrnBox(uint f) : base(MP4_BoxType.url, 0, f) { }
+    public new MP4_BoxType GetType() => base.Type;
+  }
+
+  public class MP4_SampleTableBox : MP4_Box
+  {
+    public MP4_SampleTableBox() : base(MP4_BoxType.stbl)
+    {
+    }
+  }
+
 }

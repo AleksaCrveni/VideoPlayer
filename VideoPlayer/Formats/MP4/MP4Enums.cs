@@ -10,6 +10,23 @@
     pdin,
     moov,
     mvhd,
+    trak,
+    tkhd,
+    edts,
+    elst,
+    mdia,
+    mdhd,
+    hdlr,
+    minf,
+    vmhd,
+    smhd,
+    hmhd,
+    nmhd,
+    dinf,
+    url,
+    urn, 
+    dref,
+    stbl
   }
 
   public enum MP4_FtypMajorBrand : uint
@@ -101,5 +118,34 @@
 
   }
 
+  public enum MP4_HanlderType
+  {
+    NULL = 1853189228, // Just used to hold resources
+    vide = 1986618469, // Video Track
+    soun = 1936684398, // Audio Track
+    hint = 1751740020, // Hint Track
+    meta = 1835365473, // Time Metadata Track
+    auxv = 1635088502, // Auxiliary Video Track
+  }
 
+  // subset of Mp4_BoxType that are allowed to be a Header type
+  public enum MP4_MediaInformationHeaderType
+  {
+    vmhd = 1986881636,
+    smhd = 1936549988,
+    hmhd = 1752000612,
+    nmhd = 1852663908,
+  }
+
+  // seems redundant bue w/e
+  public enum MP4_VideoMediaHeaderGraphicsMode
+  {
+    copy = 0
+  }
+  // subset of Mp4_BoxType that are allowed to be a DataReference Type
+  public enum MP4_DataEntryType
+  {
+    url = 1970433056,
+    urn = 1970433568,
+  }
 }
