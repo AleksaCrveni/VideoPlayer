@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.Design;
+using VideoPlayer.Formats.ICC;
 using VideoPlayer.Readers;
 
 namespace VideoPlayer.Formats.MP4
@@ -23,6 +24,7 @@ namespace VideoPlayer.Formats.MP4
     public sbyte[]? UserType; // only used when IsUUID is true, meaning Type == 'uuid'
   }
 
+
   /// <summary>
   /// Flags is actually 3 bytes (24 bits) shifted to the right but we use 4 bytes for convinience
   /// </summary>
@@ -37,6 +39,13 @@ namespace VideoPlayer.Formats.MP4
     }
 
   }
+
+  public class MP4_SampleEntry : MP4_Box
+  {
+    public ushort DataReferenceIndex;
+    public MP4_SampleEntry(MP4_BoxType boxType) : base(boxType) { }
+  }
+
   public class MP4_FileTypeBox : MP4_Box
   {
     public MP4_FileTypeBox() : base(MP4_BoxType.ftyp) { }
@@ -253,7 +262,7 @@ namespace VideoPlayer.Formats.MP4
 
   public class MP4_HandlerRefBox : MP4_FullBox
   {
-    public MP4_HanlderType HandlerType;
+    public MP4_HandlerType HandlerType;
     public string Name;
     public MP4_HandlerRefBox() : base(MP4_BoxType.hdlr, 0, 0) { }
   }
@@ -329,9 +338,143 @@ namespace VideoPlayer.Formats.MP4
 
   public class MP4_SampleTableBox : MP4_Box
   {
+    public MP4_SampleDescriptionBox Description;
     public MP4_SampleTableBox() : base(MP4_BoxType.stbl)
     {
     }
   }
+  public class MP4_SampleDescriptionBox : MP4_FullBox
+  {
+    public MP4_SampleDescriptionBox(MP4_HandlerType handlerType) : base(MP4_BoxType.stsd, 0, 0) { }
+  }
+
+  public class MP4_HintSampleEntryBox : MP4_SampleEntry
+  {
+    public byte[] Data;
+    public MP4_HintSampleEntryBox(MP4_BoxType protocol) : base(protocol) { }
+  }
+
+  public class MP4_BitRateBox : MP4_Box
+  {
+    public uint BufferSizeDB;
+    public uint MaxBitrate;
+    public uint AvgBitrate;
+    public MP4_BitRateBox() : base(MP4_BoxType.btrt) { }
+  }
+
+  public class MP4_MetaDataSampleEntryBox : MP4_SampleEntry
+  {
+    public MP4_MetaDataSampleEntryBox(MP4_BoxType protocol) : base(protocol) { }
+  }
+
+  public class MP4_XMLMetadataSampleEntry : MP4_MetaDataSampleEntryBox
+  {
+    public string ContentEncoding;
+    public string Namespace;
+    public string SchemaLocation;
+    public MP4_BitRateBox? BitRate;
+
+    public MP4_XMLMetadataSampleEntry() : base(MP4_BoxType.metx) { }
+  }
+
+  public class MP4_TextMetaDataSampleEntry : MP4_MetaDataSampleEntryBox
+  {
+    public string ContentEncoding;
+    public string MimeFormat;
+    public MP4_BitRateBox? BitRate;
+    public MP4_TextMetaDataSampleEntry() : base(MP4_BoxType.mett) { }
+  }
+
+  public class MP4_URIBox : MP4_FullBox
+  {
+    public string URI;
+    public MP4_URIBox() : base(MP4_BoxType.uri, 0, 0) { }
+  }
+
+  public class MP4_URIInitBox : MP4_FullBox
+  {
+    public byte[] UriInitData;
+    public MP4_URIInitBox() : base(MP4_BoxType.uriI, 0, 0) { }
+  }
+
+  public class MP4_URIMetaSampleEntry : MP4_MetaDataSampleEntryBox
+  {
+    public MP4_URIBox Label;
+    public MP4_URIInitBox? Init;
+    // MPEG4BitRateBox wtf is this
+    public MP4_URIMetaSampleEntry() : base(MP4_BoxType.urim) { }
+
+  }
+
+  public class MP4_PixelAspectRationBox : MP4_Box
+  {
+    public uint HSpacing;
+    public uint VSpacing;
+    public MP4_PixelAspectRationBox() : base(MP4_BoxType.pasp) { }
+  }
+
+  public class MP4_CleanApertureBox : MP4_Box
+  {
+    public uint CleanApertureWidthN;
+    public uint CleanApertureWidthD;
+    public uint CleanApertureHeightN;
+    public uint CleanApertureHeightD;
+    public uint HorizOffN;
+    public uint HorizOffD;
+    public uint VertOffN;
+    public uint VertOffD;
+    public MP4_CleanApertureBox() : base(MP4_BoxType.clap) { }
+  }
+
+  public class MP4_ColorInformationBox : MP4_Box
+  {
+    public MP4_ColorType ColorType;
+    public MP4_NCLXColorData NCLXColorProfile;
+    public ICCProfile ICCProfile;
+    public MP4_ColorInformationBox(MP4_ColorType colorType) : base(MP4_BoxType.colr)
+    {
+      ColorType = colorType;
+      if (colorType == MP4_ColorType.nclx)
+        NCLXColorProfile = new MP4_NCLXColorData();
+      else if (colorType == MP4_ColorType.prof)
+        ICCProfile = new ICCProfile();
+      else if (colorType == MP4_ColorType.rICC)
+        ICCProfile = new ICCProfile(); // reserved
+      else
+        throw new InvalidDataException("Invalid color profile!");
+    }
+  }
+
+  public class MP4_NCLXColorData
+  {
+    public ushort ColorPrimaries;
+    public ushort TransferCharacteristics;
+    public ushort MatrixCoefficients;
+    public byte FullRangeFlag;
+  }
+
+  public class MP4_VisualSampleEntryBox : MP4_SampleEntry
+  {
+    public ushort Width;
+    public ushort Height;
+    // pixels per inch
+    public double HorizResolution = ISOParser.ParseFixed1616(0x00480000); // 72dpi
+    public double VertResolution = ISOParser.ParseFixed1616(0x00480000); // 72dpi
+    public ushort FrameCount = 1;
+    public string CompressorName;
+    public ushort Depth = 0x0018; // idk if this is fixed number........
+    public MP4_CleanApertureBox? CLAP;
+    public MP4_PixelAspectRationBox PASP;
+    public MP4_VisualSampleEntryBox(MP4_BoxType codingname) : base(codingname) { }
+  }
+
+  public class MP4_AudioSamplEntryBox : MP4_SampleEntry
+  {
+    public ushort ChannelCount;
+    public ushort SampleSize;
+    public double SampleRate = ISOParser.ParseFixed1616((48000 / 256) << 16); // idfk if this irght
+    public MP4_AudioSamplEntryBox(MP4_BoxType codingName) : base(codingName) { }
+  }
+
 
 }

@@ -26,7 +26,17 @@
     url,
     urn, 
     dref,
-    stbl
+    stbl,
+    stsd,
+    btrt,
+    metx,
+    mett,
+    uri,
+    uriI,
+    urim,
+    pasp,
+    clap,
+    colr
   }
 
   public enum MP4_FtypMajorBrand : uint
@@ -118,7 +128,7 @@
 
   }
 
-  public enum MP4_HanlderType
+  public enum MP4_HandlerType
   {
     NULL = 1853189228, // Just used to hold resources
     vide = 1986618469, // Video Track
@@ -148,4 +158,12 @@
     url = 1970433056,
     urn = 1970433568,
   }
+
+  public enum MP4_ColorType
+  {
+    nclx = 1852009592,
+    rICC = 1917403971,
+    prof = 1886547814,
+  }
+
 }
