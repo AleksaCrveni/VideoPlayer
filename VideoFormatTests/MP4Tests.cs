@@ -3,7 +3,7 @@
 namespace VideoFormatTests
 {
   [TestClass]
-  public sealed class MP4
+  public sealed class MP4Tests
   {
     [TestMethod]
     public void HD_LessThan10MB()
