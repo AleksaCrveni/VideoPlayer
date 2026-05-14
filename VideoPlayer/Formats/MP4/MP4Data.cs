@@ -78,10 +78,8 @@ namespace VideoPlayer.Formats.MP4
   {
     public MP4_MovieHeaderBox Header;
     public List<MP4_TrackBox> Tracks;
-    public MP4_MovieBox(MP4_BoxType boxType, sbyte[]? extended_type = null) : base(boxType, extended_type)
-    {
-
-    }
+    public MP4_UserDataBox? UserData;
+    public MP4_MovieBox() : base(MP4_BoxType.moov) { }
   }
   public class MP4_MovieHeaderBox : MP4_FullBox
   {
@@ -137,8 +135,9 @@ namespace VideoPlayer.Formats.MP4
   public class MP4_TrackBox : MP4_Box
   {
     public MP4_TrackHeaderBox Header;
-    public MP4_EditBox EditBox;
-    public MP4_MediaBox MediaBox;
+    public MP4_EditBox Edit;
+    public MP4_MediaBox Media;
+    public MP4_UserDataBox? UserData;
     public MP4_TrackBox() : base(MP4_BoxType.trak)
     {
     }
@@ -339,6 +338,13 @@ namespace VideoPlayer.Formats.MP4
   public class MP4_SampleTableBox : MP4_Box
   {
     public MP4_SampleDescriptionBox Description;
+    public MP4_SyncSampleBox SyncSample;
+    public MP4_CompositionToSampleBox CTTS;
+    public MP4_SampleToChunkBox STTC;
+    public MP4_ISampleSizeBox SampleSize;
+    public MP4_SampleSizeBoxType SampleSizeType;
+    public List<MP4_SampleToGroupBox> SampleToGroups;
+    public List<MP4_SampleGroupDescriptionBox> GroupDescription; // should be one for each SampleToGroupEntry
     public MP4_SampleTableBox() : base(MP4_BoxType.stbl)
     {
     }
@@ -476,5 +482,96 @@ namespace VideoPlayer.Formats.MP4
     public MP4_AudioSamplEntryBox(MP4_BoxType codingName) : base(codingName) { }
   }
 
+  public class MP4_SyncSampleBox : MP4_FullBox
+  {
+    public uint[] Samples;
+    public MP4_SyncSampleBox() : base(MP4_BoxType.stss, 0, 0) { }
 
+  }
+
+  public class MP4_CompositionToSampleBox : MP4_FullBox
+  {
+    public (uint SampleCount, uint SampleOffset)[] UnsignedData;
+    public (uint SampleCount, int SampleOffset)[] SignedData;
+    public byte LocalVersion;
+    public MP4_CompositionToSampleBox(byte v) : base(MP4_BoxType.ctts, 0, 0)
+    {
+      LocalVersion = v;
+    }
+  }
+
+  public class  MP4_SampleToChunkBox : MP4_FullBox
+  {
+    // put this in a class
+    public (uint FirstChunk, uint SamplesPerChunk, uint SampleDescriptionIndex) Data;
+    public MP4_SampleToChunkBox() : base(MP4_BoxType.stsc, 0, 0) { }
+  }
+
+  public interface MP4_ISampleSizeBox { };
+  public class MP4_SampleSizeBox : MP4_FullBox, MP4_ISampleSizeBox
+  {
+    public uint SampleSize;
+    public uint[] SampleSizes;
+    public MP4_SampleSizeBox() : base(MP4_BoxType.stsz, 0, 0) { }
+  }
+
+  public class MP4_CompactSampleSizeBox : MP4_FullBox, MP4_ISampleSizeBox
+  {
+    public byte FieldSize;
+    // variable........ CANCER
+    public MP4_CompactSampleSizeBox() : base(MP4_BoxType.stz2, 0, 0) { }
+  }
+
+  public class MP4_SampleToGroupBox : MP4_FullBox
+  {
+    public uint GroupingType;
+    public uint GroupingTypeParameter;
+    public (uint SampleGroup, uint GroupDescriptionIndex)[] Entries;
+    public MP4_SampleToGroupBox(byte v) : base(MP4_BoxType.sbgp, v, 0) { }
+  }
+
+
+  // These are abstract beacuse they are supposed to be different for each protocol, so I should
+  // eventually implement them per protocol eventually or something like that
+  // At least thats how its defined in specification
+  // Sequence Entry
+  public abstract class MP4_SampleGroupDescriptionEntry
+  {
+    public MP4_SampleGroupDescriptionEntry(uint GroupingType) { }
+  } // This should be an interface?
+  public abstract class MP4_VisualSampleGroupEntry : MP4_SampleGroupDescriptionEntry
+  {
+    public MP4_VisualSampleGroupEntry (uint GroupingType) : base(GroupingType) { }
+  }
+  public abstract class MP4_AudioSampleGroupEntry : MP4_SampleGroupDescriptionEntry
+  {
+    public MP4_AudioSampleGroupEntry(uint GroupingType) : base(GroupingType) { }
+  }
+  public abstract class MP4_HintSampleGroupEntry : MP4_SampleGroupDescriptionEntry
+  {
+    public MP4_HintSampleGroupEntry(uint GroupingType) : base(GroupingType) { }
+  }
+
+  public class MP4_SampleGroupDescriptionBox : MP4_FullBox
+  {
+    public uint GroupingType;
+    public uint DefaultLength;
+    public uint EntryCount;
+    public MP4_SampleGroupDescriptionEntry[] Entries;
+    public MP4_SampleGroupDescriptionBox(byte v) : base(MP4_BoxType.sgpd, v, 0) { }
+  }
+
+  public class MP4_UserDataBox : MP4_Box
+  {
+    public MP4_NameBox Name;
+    public MP4_UserDataBox() : base(MP4_BoxType.udta) { }
+  }
+
+  public class MP4_NameBox : MP4_Box
+  {
+    public string Data;
+    public MP4_NameBox() : base(MP4_BoxType.name)
+    {
+    }
+  }
 }

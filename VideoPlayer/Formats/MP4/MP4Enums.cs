@@ -36,7 +36,17 @@
     urim,
     pasp,
     clap,
-    colr
+    colr,
+    avc1,
+    stss,
+    ctts,
+    stsc,
+    stsz,
+    stz2,
+    sgpd,
+    sbgp,
+    udta,
+    name
   }
 
   public enum MP4_FtypMajorBrand : uint
@@ -166,4 +176,14 @@
     prof = 1886547814,
   }
 
+  public enum MP4_CodingType
+  {
+    avc1 // H.264/AVC
+  }
+
+  public enum MP4_SampleSizeBoxType
+  {
+    stsz,
+    stz2
+  }
 }
