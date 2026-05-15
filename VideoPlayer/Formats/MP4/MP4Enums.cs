@@ -2,6 +2,7 @@
 {
   public enum MP4_BoxType : uint
   {
+    NULL = 0,
     uuid = 1970628964,
     ftyp = 1718909296,
     mdat = 1835295092,

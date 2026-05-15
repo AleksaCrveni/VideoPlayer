@@ -7,8 +7,11 @@ namespace VideoPlayer.Formats.MP4
   public class MP4File
   {
     public MP4_FileTypeBox FileType;
+    public List<MP4_MediaDataBox> MediaData = new List<MP4_MediaDataBox>();
+    public MP4_MovieBox Movie;
+    public MP4_ProgressiveDownloadInfoBox PDownloadInfo;
   }
-
+   
   // we dont need to store size since we will read all data into boxes during parsing
   public class MP4_Box
   {
@@ -51,14 +54,13 @@ namespace VideoPlayer.Formats.MP4
     public MP4_FileTypeBox() : base(MP4_BoxType.ftyp) { }
     public MP4_FtypMajorBrand MajorBrand;
     public uint MinorVersion;
-    // this could probably be array since can calculate how many brands there may be based on size and curr pos
-    public List<MP4_FtypMajorBrand> CompatibleBrands;
+    public MP4_FtypMajorBrand[] CompatibleBrands;
   }
 
   public class MP4_MediaDataBox : MP4_Box
   {
-    byte[] Data;
-    public MP4_MediaDataBox() : base(MP4_BoxType.uuid) { }
+    public byte[] Data;
+    public MP4_MediaDataBox() : base(MP4_BoxType.mdat) { }
 
 
   }
@@ -77,7 +79,7 @@ namespace VideoPlayer.Formats.MP4
   public class MP4_MovieBox : MP4_Box
   {
     public MP4_MovieHeaderBox Header;
-    public List<MP4_TrackBox> Tracks;
+    public List<MP4_TrackBox> Tracks = new List<MP4_TrackBox>();
     public MP4_UserDataBox? UserData;
     public MP4_MovieBox() : base(MP4_BoxType.moov) { }
   }
