@@ -187,4 +187,12 @@
     stsz = 1937011578,
     stz2 = 1937013298,
   }
+
+  public enum MP4_TrackStatus
+  {
+    Enabled,
+    InMovie,
+    InPreview
+  }
+
 }

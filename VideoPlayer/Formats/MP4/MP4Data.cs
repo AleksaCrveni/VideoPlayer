@@ -72,7 +72,7 @@ namespace VideoPlayer.Formats.MP4
 
   public class MP4_ProgressiveDownloadInfoBox : MP4_FullBox
   {
-    public List<(uint rate, uint initial_delay)> Data;
+    public (uint rate, uint initial_delay)[] Data;
     public MP4_ProgressiveDownloadInfoBox() : base(MP4_BoxType.pdin, 0, 0) { }
   }
 
@@ -137,8 +137,8 @@ namespace VideoPlayer.Formats.MP4
   public class MP4_TrackBox : MP4_Box
   {
     public MP4_TrackHeaderBox Header;
-    public MP4_EditBox Edit;
-    public MP4_MediaBox Media;
+    public MP4_EditBox? Edit;
+    public MP4_TrackMediaBox TrackMedia;
     public MP4_UserDataBox? UserData;
     public MP4_TrackBox() : base(MP4_BoxType.trak)
     {
@@ -147,6 +147,7 @@ namespace VideoPlayer.Formats.MP4
 
   public class MP4_TrackHeaderBox : MP4_FullBox
   {
+    public MP4_TrackStatus Status;
     public MP4_TrackHeaderVData64 Data64;
     public MP4_TrackHeaderVData32 Data32;
     public short Layer;
@@ -158,17 +159,20 @@ namespace VideoPlayer.Formats.MP4
     public MP4_TrackHeaderBox(byte v, uint f) : base(MP4_BoxType.tkhd, v, f)
     {
       if (v == 1)
-      {
         Data64 = new MP4_TrackHeaderVData64();
-      }
       else if (v == 0)
-      {
         Data32 = new MP4_TrackHeaderVData32();
-      }
       else
-      {
         throw new InvalidDataException("Version supported!");
-      }
+
+      if (f == 1)
+        Status = MP4_TrackStatus.Enabled;
+      else if (f == 2)
+        Status = MP4_TrackStatus.InMovie;
+      else if (f == 4)
+        Status = MP4_TrackStatus.InPreview;
+      else
+        throw new InvalidDataException("Invalid Flag for Track Header!");
     }
   }
 
@@ -177,7 +181,6 @@ namespace VideoPlayer.Formats.MP4
     public ulong CreationTime;
     public ulong ModificationTime;
     public uint TrackID;
-    public readonly uint Reserved = 0; // redundant?
     public ulong Duration;
   }
 
@@ -186,7 +189,6 @@ namespace VideoPlayer.Formats.MP4
     public uint CreationTime;
     public uint ModificationTime;
     public uint TrackID;
-    public readonly uint Reserved = 0; // redundant?
     public uint Duration;
   }
 
@@ -198,35 +200,34 @@ namespace VideoPlayer.Formats.MP4
 
   public class MP4_EditListBox : MP4_FullBox
   {
-    public uint EntryCount;
-    public MP4_EditListData64 Data64;
-    public MP4_EditListData32 Data32;
-    public short MediaRateInteger;
-    public short MediaRateFraction = 0;
-    public MP4_EditListBox(byte v) : base(MP4_BoxType.elst, v, 0)
-    {
+    public MP4_EditListData64[]? Data64;
+    public MP4_EditListData32[]? Data32;
 
-    }
+    public MP4_EditListBox(byte v) : base(MP4_BoxType.elst, v, 0) { }
   }
 
   public class MP4_EditListData64
   {
     public ulong SegmentDuration;
     public long MediaTime;
+    public short MediaRateInteger;
+    public short MediaRateFraction = 0;
   }
 
   public class MP4_EditListData32
   {
     public uint SegmentDuration;
     public int MediaTime;
+    public short MediaRateInteger;
+    public short MediaRateFraction = 0;
   }
 
-  public class MP4_MediaBox : MP4_Box
+  public class MP4_TrackMediaBox : MP4_Box
   {
     public MP4_MediaHeaderBox Header;
     public MP4_HandlerRefBox Handler;
     public MP4_MediaInformationBox Info;
-    public MP4_MediaBox() : base(MP4_BoxType.mdia) { }
+    public MP4_TrackMediaBox() : base(MP4_BoxType.mdia) { }
   }
 
   public class MP4_MediaHeaderBox : MP4_FullBox
@@ -277,33 +278,33 @@ namespace VideoPlayer.Formats.MP4
     public MP4_MediaInformationBox() : base(MP4_BoxType.minf) { }
   }
   public interface IMediaInformationHeader { }
-  public class VideoMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
+  public class MP4_VideoMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
   {
     public MP4_VideoMediaHeaderGraphicsMode GraphicsMode = MP4_VideoMediaHeaderGraphicsMode.copy;
     public ushort[] OpColor = [0, 0, 0];
-    public VideoMediaHeaderBox() : base(MP4_BoxType.vmhd, 0, 1) { }
+    public MP4_VideoMediaHeaderBox() : base(MP4_BoxType.vmhd, 0, 1) { }
   }
 
-  public class SoundMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
+  public class MP4_SoundMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
   {
     // Fixed 88. 0 is centre, -1.0 is full left and 1.0 is full right
-    public double Balanced = 0;
-    public SoundMediaHeaderBox() : base(MP4_BoxType.smhd, 0, 0) { }
+    public double Balance = 0;
+    public MP4_SoundMediaHeaderBox() : base(MP4_BoxType.smhd, 0, 0) { }
   }
 
-  public class HintMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
+  public class MP4_HintMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
   {
     // PDU -> Protocol Data Unit
     public ushort MaxPDUSize;
     public ushort AvgPDUSize;
     public uint MaxBitrate;
     public uint AvgBitrate;
-    public HintMediaHeaderBox() : base(MP4_BoxType.hmhd, 0, 0) { }
+    public MP4_HintMediaHeaderBox() : base(MP4_BoxType.hmhd, 0, 0) { }
   }
 
-  public class NullMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
+  public class MP4_NullMediaHeaderBox : MP4_FullBox, IMediaInformationHeader
   {
-    public NullMediaHeaderBox() : base(MP4_BoxType.nmhd, 0, 0) { }
+    public MP4_NullMediaHeaderBox() : base(MP4_BoxType.nmhd, 0, 0) { }
   }
 
   // I am not sure if this HAS to be dref containing urn/url or it can just be single url/urn

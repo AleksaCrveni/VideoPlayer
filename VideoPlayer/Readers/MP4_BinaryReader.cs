@@ -1,4 +1,5 @@
 ﻿using System.Buffers.Binary;
+using System.Text;
 
 namespace VideoPlayer.Readers
 {
@@ -24,6 +25,8 @@ namespace VideoPlayer.Readers
       _buffer = buffer;
     }
 
+#region BigEndian
+    #region signed
     public short ReadInt16BE()
     {
       short res = BinaryPrimitives.ReadInt16BigEndian(_buffer.Slice(_readPos, 2));
@@ -31,25 +34,53 @@ namespace VideoPlayer.Readers
       return res;
     }
 
-    public uint ReadUInt32BE()
-    {
-      uint res = BinaryPrimitives.ReadUInt32BigEndian(_buffer.Slice(_readPos, 4));
-      _readPos += 4;
-      return res;
-    }
     public int ReadInt32BE()
     {
       int res = BinaryPrimitives.ReadInt32BigEndian(_buffer.Slice(_readPos, 4));
       _readPos += 4;
       return res;
     }
+    public long ReadInt64BE()
+    {
+      long res = BinaryPrimitives.ReadInt64BigEndian(_buffer.Slice(_readPos, 8));
+      _readPos += 8;
+      return res;
+    }
+    #endregion signed
+
+    #region unsigned
+    public ushort ReadUInt16BE()
+    {
+      ushort res = BinaryPrimitives.ReadUInt16BigEndian(_buffer.Slice(_readPos, 2));
+      _readPos += 2;
+      return res;
+    }
+    public uint ReadUInt32BE()
+    {
+      uint res = BinaryPrimitives.ReadUInt32BigEndian(_buffer.Slice(_readPos, 4));
+      _readPos += 4;
+      return res;
+    }
+
     public ulong ReadUInt64BE()
     {
       uint res = BinaryPrimitives.ReadUInt32BigEndian(_buffer.Slice(_readPos, 8));
       _readPos += 8;
       return res;
     }
+    #endregion unsigned
+    #endregion BigEndian
 
+    public string ReadNullTerminatedString()
+    {
+      int startPos = _readPos;
+      byte c = _buffer[_readPos];
+      while (c != 0 && _readPos < _buffer.Length)
+        c = _buffer[++_readPos];
+
+      _readPos++; // move off null
+      return Encoding.UTF8.GetString(_buffer.Slice(startPos, _readPos - startPos - 1));
+    }
     public void Skip(int size) => _readPos += size;
     public byte[] ReadNext(int size)
     {
