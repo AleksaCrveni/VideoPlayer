@@ -39,6 +39,7 @@
     clap = 1668047216,
     colr = 1668246642,
     avc1 = 1635148593,
+    avcC = 1635148611,
     stss = 1937011571,
     ctts = 1668576371,
     stsc = 1937011555,
@@ -48,6 +49,7 @@
     sbgp = 1935828848,
     udta = 1969517665,
     name = 1851878757,
+
   }
 
   public enum MP4_FtypMajorBrand : uint

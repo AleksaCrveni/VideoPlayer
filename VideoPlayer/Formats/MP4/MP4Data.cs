@@ -46,6 +46,7 @@ namespace VideoPlayer.Formats.MP4
   public class MP4_SampleEntry : MP4_Box
   {
     public ushort DataReferenceIndex;
+    public MP4_ICodecCustomBox? SampleExtraData; // for example in case of avc1 being video enttry this 
     public MP4_SampleEntry(MP4_BoxType boxType) : base(boxType) { }
   }
 
@@ -354,8 +355,27 @@ namespace VideoPlayer.Formats.MP4
   }
   public class MP4_SampleDescriptionBox : MP4_FullBox
   {
-    public MP4_SampleDescriptionBox(MP4_HandlerType handlerType) : base(MP4_BoxType.stsd, 0, 0) { }
+    public MP4_SampleEntry[] SampleEntries;
+    public MP4_HandlerType HandlerType;
+    public MP4_SampleDescriptionBox(MP4_HandlerType handlerType) : base(MP4_BoxType.stsd, 0, 0)
+    {
+      HandlerType = handlerType;
+    }
   }
+
+  public interface MP4_ICodecCustomBox { }
+  public class MP4_AVCConfigurationBox : MP4_Box, MP4_ICodecCustomBox
+  {
+    public byte Version;
+    public byte AVCProfile;
+    public byte AVCCompatibility;
+    public byte AVCLevel;
+    public byte NALULengthSize;
+    public List<byte[]> SPSData;
+    public List<byte[]> PPSData;
+    public MP4_AVCConfigurationBox() : base(MP4_BoxType.avcC) { }
+  }
+
 
   public class MP4_HintSampleEntryBox : MP4_SampleEntry
   {

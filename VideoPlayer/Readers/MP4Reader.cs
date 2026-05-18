@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.Reflection.Metadata.Ecma335;
+using System.Reflection.PortableExecutable;
 using System.Runtime.ExceptionServices;
 using VideoPlayer.Formats.MP4;
 
@@ -122,7 +123,6 @@ namespace VideoPlayer.Readers
       }
       return box;
     }
-
     public static MP4_EditBox ParseEdit(ReadOnlySpan<byte> buffer)
     {
       BinaryReader r = new BinaryReader(buffer);
@@ -150,7 +150,6 @@ namespace VideoPlayer.Readers
       }
       return box;
     }
-
     public static MP4_TrackMediaBox ParseTrackMedia(ReadOnlySpan<byte> buffer)
     {
       BinaryReader r = new BinaryReader(buffer);
@@ -173,7 +172,7 @@ namespace VideoPlayer.Readers
             box.Handler = ParseHandler(boxData);
             break;
           case MP4_BoxType.minf:
-            box.Info = ParseMediaInformation(boxData);
+            box.Info = ParseMediaInformation(boxData, box.Handler.HandlerType);
           break;
           default:
             throw new InvalidDataException($"Unknown box type: {Header.type.ToString()}");
@@ -184,7 +183,7 @@ namespace VideoPlayer.Readers
       }
       return box;
     }
-    public static MP4_MediaInformationBox ParseMediaInformation(ReadOnlySpan<byte> buffer)
+    public static MP4_MediaInformationBox ParseMediaInformation(ReadOnlySpan<byte> buffer, MP4_HandlerType handlerType)
     {
       BinaryReader r = new BinaryReader(buffer);
       MP4_MediaInformationBox box = new MP4_MediaInformationBox();
@@ -214,6 +213,9 @@ namespace VideoPlayer.Readers
             box.Header = ParseNullMediaHeader(boxData);
             box.HeaderType = MP4_MediaInformationHeaderType.nmhd;
             break;
+          case MP4_BoxType.stbl:
+            box.SampleTable = ParseSampleTable(boxData, handlerType);
+            break;
           default:
             throw new InvalidDataException($"Unknown box type: {Header.type.ToString()}");
         }
@@ -224,6 +226,179 @@ namespace VideoPlayer.Readers
       return box;
     }
 
+    public static MP4_SampleTableBox ParseSampleTable(ReadOnlySpan<byte> buffer, MP4_HandlerType handlerType)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_SampleTableBox box = new MP4_SampleTableBox();
+      (uint size, MP4_BoxType type) Header = ParseBoxHeader(ref r);
+      ReadOnlySpan<byte> boxData;
+      while (Header.type != 0)
+      {
+        int noHeaderLen = (int)Header.size - 8;
+        if (noHeaderLen == -8)
+          noHeaderLen = r.Len - r.Pos;
+        boxData = buffer.Slice(r.Pos, noHeaderLen);
+        switch (Header.type)
+        {
+          case MP4_BoxType.stsd:
+            box.Description = ParseSampleDescriptionBox(boxData, handlerType);
+            break;
+          default:
+            throw new InvalidDataException($"Unknown box type: {Header.type.ToString()}");
+        }
+        // this just is so we have bounded box data and size is size of the total box including the header
+        r.Skip(noHeaderLen);
+        Header = ParseBoxHeader(ref r);
+      }
+      return box;
+    }
+
+    public static MP4_SampleDescriptionBox ParseSampleDescriptionBox(ReadOnlySpan<byte> buffer, MP4_HandlerType handlerType)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_SampleDescriptionBox box = new MP4_SampleDescriptionBox(handlerType);
+      r.Skip(4);
+      uint entryCount = r.ReadUInt32BE();
+      MP4_SampleEntry[] sampleEntries = new MP4_SampleEntry[entryCount];
+      ReadOnlySpan<byte> boxData;
+      for (int i = 0; i <= entryCount; i++)
+      {
+        uint boxSize = r.ReadUInt32BE();
+        int noSizeBoxLen = (int)boxSize - 4;
+        if (noSizeBoxLen == -4)
+          noSizeBoxLen = r.Len - r.Pos;
+        boxData = buffer.Slice(r.Pos, noSizeBoxLen);
+
+        switch (handlerType)
+        {
+          case MP4_HandlerType.soun:
+            throw new NotImplementedException();
+            break;
+          case MP4_HandlerType.vide:
+            sampleEntries[i] = ParseVisualSampleEntry(boxData);
+            break;
+          case MP4_HandlerType.hint:
+            throw new NotImplementedException();
+            break;
+          case MP4_HandlerType.meta:
+            throw new NotImplementedException();
+            break;
+          // not sure if NULL is required to be instancieeted
+          default:
+            throw new InvalidDataException("Unknown HandlerType!");
+            break;
+        }
+        r.Skip(noSizeBoxLen);
+      }
+      return box;
+    }
+    /// <summary>
+    /// Buffer starts after size entry just before the name of the codec
+    /// so first 32bit read woul be codec name
+    /// </summary>
+    /// <param name="buffer"></param>
+    /// <returns></returns>
+    public static MP4_SampleEntry ParseVisualSampleEntry(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader();
+      MP4_CodingType codecType = (MP4_CodingType)r.ReadUInt32BE();
+      if (!Enum.IsDefined(codecType))
+        throw new InvalidDataException("Unknown codec!");
+      // this cast is guaranteed
+      MP4_VisualSampleEntryBox box = new MP4_VisualSampleEntryBox((MP4_BoxType)codecType);
+      r.Skip(6); // skip 6 resevred from SampleEntry default
+      box.DataReferenceIndex = r.ReadUInt16BE();
+      r.Skip(2 + 2 + 12);
+      box.Width = r.ReadUInt16BE();
+      box.Height = r.ReadUInt16BE();
+      box.HorizResolution = Parse1616Int(ref r);
+      box.VertResolution = Parse1616Int(ref r);
+      r.Skip(4);
+      box.FrameCount = r.ReadUInt16BE();
+      box.CompressorName = r.ReadNextAsString(32);
+      box.Depth = r.ReadUInt16BE();
+      r.Skip(2);
+      
+      if (r.Pos >= r.Len)
+        return box;
+      // do while loop for extra boxes and do special cases for clap and pasp
+      // if its not check if box name matches extra data code for MP4_coding type and put it in box.SampleExtraData
+      ReadOnlySpan<byte> boxData;
+      (uint size, MP4_BoxType type) Header = ParseBoxHeader(ref r);
+      while (Header.type != 0)
+      {
+        int noHeaderLen = (int)Header.size - 8;
+        if (noHeaderLen == -8)
+          noHeaderLen = r.Len - r.Pos;
+        boxData = buffer.Slice(r.Pos, noHeaderLen);
+        switch (Header.type)
+        {
+          case MP4_BoxType.clap:
+            throw new NotImplementedException();
+            break;
+          case MP4_BoxType.pasp:
+            throw new NotImplementedException();
+            break;
+          case MP4_BoxType.avcC:
+            if (codecType != MP4_CodingType.avc1)
+              throw new InvalidDataException($"Uknown extra sample data: {Header.type.ToString()} for avc1");
+            box.SampleExtraData = ParseAVCConfigurationBox(buffer);
+            break;
+          default:
+            throw new InvalidDataException($"Uknown extra sample data: {Header.type.ToString()}");
+            break;
+        }
+        // this just is so we have bounded box data and size is size of the total box including the header
+        r.Skip(noHeaderLen);
+        Header = ParseBoxHeader(ref r);
+      }
+
+      return box;
+    }
+    public static MP4_ICodecCustomBox ParseAVCConfigurationBox(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_AVCConfigurationBox box = new MP4_AVCConfigurationBox();
+      box.Version = r.ReadNextByte();
+      box.AVCProfile = r.ReadNextByte();
+      box.AVCCompatibility = r.ReadNextByte();
+      box.AVCLevel = r.ReadNextByte();
+      /*
+       * This field is supposed to tell
+       * us how many bytes to use to store the length of each NALU.
+       * So, if NALULengthSizeMinusOne is set to 0,
+       * then each NALU is preceded with a single byte indicating its length, etc
+       * 
+       * BUT! In reality size sps and sps len field appears to be 2 bytes even though NALULenghtSize is set to 3 ( means 4 bytes).
+       * This might be only MP4 derived thing, meaning its different in some cases than raw h264?
+       * There isn't any official specification out there other than some questions on SO, since latest official spec is chained behind
+       * 300e paywall :)
+       * 
+       * So for now always assume that psp and sps NALU sizes are in 2 bytes and after reading all of it see if we are at the end of the box.
+       * If we arent throw so I can come up with better solution and maybe do some calculations and read ahead etc
+       * 
+       * References:
+       * https://stackoverflow.com/questions/24884827/possible-locations-for-sequence-picture-parameter-sets-for-h-264-stream
+       * https://stackoverflow.com/questions/17541153/how-to-find-sps-and-pps-string-in-h264-codec-from-mp4
+      */
+      box.NALULengthSize = (byte)(r.ReadNextByte() & 3 + 1);
+      byte SPS_NALU_COUNT = (byte)(r.ReadNextByte() & 31);
+      box.SPSData = new List<byte[]>(SPS_NALU_COUNT);
+      for (int i = 0; i < SPS_NALU_COUNT; i++)
+      {
+        uint size = r.ReadUInt16BE();
+        box.SPSData.Add(r.ReadNext((int)size));
+      }
+      byte PPS_NALU_COUNT = r.ReadNextByte();
+      box.PPSData = new List<byte[]>(PPS_NALU_COUNT);
+      for (int i = 0; i < PPS_NALU_COUNT; i++)
+      {
+        uint size = r.ReadUInt16BE();
+        box.PPSData.Add(r.ReadNext((int)size));
+      }
+      Debug.Assert(r.Pos == r.Len);
+      return box;
+    }
     public static MP4_VideoMediaHeaderBox ParseVideoMediaHeader(ReadOnlySpan<byte> buffer)
     {
       BinaryReader r = new BinaryReader(buffer);
@@ -236,7 +411,6 @@ namespace VideoPlayer.Readers
       box.OpColor[2] = r.ReadUInt16BE(); // b
       return box;
     }
-
     public static MP4_SoundMediaHeaderBox ParseSoundMediaHeader(ReadOnlySpan<byte> buffer)
     {
       BinaryReader r = new BinaryReader(buffer);
