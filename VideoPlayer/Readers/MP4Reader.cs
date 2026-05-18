@@ -1,4 +1,5 @@
 ﻿
+using Microsoft.VisualBasic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.Design;
 using System.Diagnostics;
@@ -241,7 +242,31 @@ namespace VideoPlayer.Readers
         switch (Header.type)
         {
           case MP4_BoxType.stsd:
-            box.Description = ParseSampleDescriptionBox(boxData, handlerType);
+            box.Description = ParseSampleDescription(boxData, handlerType);
+            break;
+          case MP4_BoxType.stts:
+            box.STTS = ParseTimeToSample(boxData);
+            break;
+          case MP4_BoxType.stss:
+            box.SyncSample = ParseSyncSample(boxData);
+            break;
+          case MP4_BoxType.ctts:
+            box.CTTS = ParseCompositionToSample(boxData);
+            break;
+          case MP4_BoxType.stsc:
+            box.STSC = ParseSampleToChunk(boxData);
+            break;
+          case MP4_BoxType.stsz:
+            box.SampleSize = ParseSampleSize(boxData);
+            break;
+          case MP4_BoxType.stz2:
+            box.SampleSize = ParseCompactSampleSize(boxData);
+            break;
+          case MP4_BoxType.sbgp:
+            box.SampleToGroups.Add(ParseSampleToGroup(boxData));
+            break;
+          case MP4_BoxType.sgpd:
+            box.GroupDescriptions.Add(ParseSampleGroupDescription(boxData, handlerType));
             break;
           default:
             throw new InvalidDataException($"Unknown box type: {Header.type.ToString()}");
@@ -250,10 +275,225 @@ namespace VideoPlayer.Readers
         r.Skip(noHeaderLen);
         Header = ParseBoxHeader(ref r);
       }
+
+      if (box.SampleToGroups.Count != box.GroupDescriptions.Count)
+        throw new InvalidDataException("Invalid Sample group and group description count!");
       return box;
     }
 
-    public static MP4_SampleDescriptionBox ParseSampleDescriptionBox(ReadOnlySpan<byte> buffer, MP4_HandlerType handlerType)
+    public static MP4_SampleGroupDescriptionBox ParseSampleGroupDescription(ReadOnlySpan<byte> buffer, MP4_HandlerType handlerType)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      (byte v, uint flags) header = ParseVersionAndFlags(ref r);
+      MP4_SampleGroupDescriptionBox box = new MP4_SampleGroupDescriptionBox(header.v, handlerType);
+      box.GroupingType = (MP4_GroupingType)r.ReadUInt32BE();
+      if (!Enum.IsDefined(box.GroupingType))
+        throw new InvalidDataException($"Unkown grouping type: {box.GroupingType.ToString()}")
+      if (header.v == 1)
+        box.DefaultLength = r.ReadUInt32BE();
+      box.EntryCount = r.ReadUInt32BE();
+      box.Entries = new MP4_SampleGroupDescriptionEntry[box.EntryCount + 1];
+      for (int i = 1; i <= box.EntryCount; i++)
+      {
+        uint len = box.DefaultLength;
+        if (header.v == 1 && box.DefaultLength == 0)
+          len = r.ReadUInt32BE();
+
+        switch (handlerType)
+        {
+          case MP4_HandlerType.vide:
+            box.Entries[i] = ParseAbstractVisualSampleEntry(buffer, box.GroupingType);
+            break;
+          case MP4_HandlerType.soun:
+            box.Entries[i] = ParseAbstractAudioSampleEntry(buffer, box.GroupingType);
+            break;
+          case MP4_HandlerType.hint:
+            throw new NotSupportedException("Handler type for sample group description parsing not supported yet!");
+            break;
+          default:
+            throw new InvalidDataException($"Unsupported handler for sample group description: {handlerType.ToString()}");
+            break;
+        }
+      }
+      return box;
+    }
+    public static MP4_SampleGroupDescriptionEntry ParseAbstractVisualSampleEntry(ReadOnlySpan<byte> buffer, MP4_GroupingType groupingType)
+    {
+      switch (groupingType)
+      {
+        case MP4_GroupingType.roll:
+          return ParseVisualRollSampleGroupEntry(buffer, groupingType);
+        default:
+          throw new NotSupportedException("Grouping type not supported yet!");
+      }
+    }
+    public static MP4_SampleGroupDescriptionEntry ParseAbstractAudioSampleEntry(ReadOnlySpan<byte> buffer, MP4_GroupingType groupingType)
+    {
+      switch (groupingType)
+      {
+        case MP4_GroupingType.roll:
+          return ParseAudioRollSampleGroupEntry(buffer, groupingType);
+        default:
+          throw new NotSupportedException("Grouping type not supported yet!");
+      }
+    }
+    public static MP4_VisualRollSampleGroupEntryBox ParseVisualRollSampleGroupEntry(ReadOnlySpan<byte> buffer, MP4_GroupingType groupingType)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_VisualRollSampleGroupEntryBox box = new MP4_VisualRollSampleGroupEntryBox(groupingType);
+      box.RollDistance = r.ReadInt16BE();
+      return box;
+    }
+    public static MP4_AudioRollSampleGroupEntryBox ParseAudioRollSampleGroupEntry(ReadOnlySpan<byte> buffer, MP4_GroupingType groupingType)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_AudioRollSampleGroupEntryBox box = new MP4_AudioRollSampleGroupEntryBox(groupingType);
+      box.RollDistance = r.ReadInt16BE();
+      return box;
+    }
+    public static MP4_SampleToGroupBox ParseSampleToGroup(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      (byte v, uint flags) header = ParseVersionAndFlags(ref r);
+      MP4_SampleToGroupBox box = new MP4_SampleToGroupBox(header.v);
+      box.GroupingType = r.ReadUInt32BE();
+      if (header.v == 1)
+        box.GroupingTypeParameter = r.ReadUInt32BE();
+      box.EntryCount = r.ReadUInt32BE();
+      box.Entries = new (uint, uint)[box.EntryCount + 1];
+      for (int i = 1; i <= box.EntryCount; i++)
+      {
+        box.Entries[i].SampleCount = r.ReadUInt32BE();
+        box.Entries[i].GroupDescriptionIndex = r.ReadUInt32BE();
+      }
+      return box;
+    }
+    public static MP4_SampleSizeBox ParseSampleSize(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_SampleSizeBox box = new MP4_SampleSizeBox();
+      r.Skip(4);
+      box.SampleSize = r.ReadUInt32BE();
+      box.SampleCount = r.ReadUInt32BE();
+      if (box.SampleSize == 0)
+      {
+        box.SampleSizes = new uint[box.SampleCount + 1];
+        for (int i = 1; i <= box.SampleCount; i++)
+          box.SampleSizes[i] = r.ReadUInt32BE();
+      }
+      return box;
+    }
+    public static MP4_CompactSampleSizeBox ParseCompactSampleSize(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_CompactSampleSizeBox box = new MP4_CompactSampleSizeBox();
+      r.Skip(4 + 3);
+      box.FieldSize = r.ReadByte();
+      box.SampleCount = r.ReadUInt32BE();
+      box.SampleSizes = new uint[box.SampleCount + 1];
+      if (box.FieldSize == 4)
+      {
+        for (int i = 1; i <= box.SampleCount; i+= 2)
+        {
+          byte val = r.ReadByte();
+          box.SampleSizes[i] = (uint)val >> 4;
+          if (i + 1 <= box.SampleCount)
+          {
+            box.SampleSizes[i + 1] = (uint)val & 15;
+          }
+        }
+      }
+      else if (box.FieldSize == 8)
+      {
+        for (int i = 1; i <= box.SampleCount; i++)
+        {
+          box.SampleSizes[i] = r.ReadByte();
+        }
+      }
+      else if (box.FieldSize == 16)
+      {
+        for (int i = 1; i <= box.SampleCount; i++)
+        {
+          box.SampleSizes[i] = r.ReadUInt16BE();
+        }
+      }
+      else
+      {
+        throw new InvalidDataException("Invalid field size value!");
+      }
+      return box;
+
+    }
+    public static MP4_SampleToChunkBox ParseSampleToChunk(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_SampleToChunkBox box = new MP4_SampleToChunkBox();
+      r.Skip(4);
+      box.EntryCount = r.ReadUInt32BE();
+      box.Data = new (uint, uint, uint)[box.EntryCount + 1];
+      for (int i = 1; i <= box.EntryCount; i++)
+      {
+        box.Data[i].FirstChunk = r.ReadUInt32BE();
+        box.Data[i].SamplesPerChunk = r.ReadUInt32BE();
+        box.Data[i].SampleDescriptionIndex = r.ReadUInt32BE();
+      }
+      return box;
+    }
+    public static MP4_CompositionToSampleBox ParseCompositionToSample(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      (byte v, uint flags) header = ParseVersionAndFlags(ref r);
+      MP4_CompositionToSampleBox box = new MP4_CompositionToSampleBox(header.v);
+      uint entryCount = r.ReadUInt32BE();
+      if (header.v == 0)
+      {
+        box.UnsignedData = new (uint, uint)[entryCount];
+        for (int i = 0; i < entryCount; i++)
+        {
+          box.UnsignedData[i].SampleCount = r.ReadUInt32BE();
+          box.UnsignedData[i].SampleOffset = r.ReadUInt32BE();
+        }
+      }
+      else
+      {
+        box.UnsignedData = new (uint, uint)[entryCount];
+        for (int i = 0; i < entryCount; i++)
+        {
+          box.SignedData[i].SampleCount = r.ReadUInt32BE();
+          box.SignedData[i].SampleOffset = r.ReadInt32BE();
+        }
+      }
+      return box;
+    }
+
+    public static MP4_SyncSampleBox ParseSyncSample(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_SyncSampleBox box = new MP4_SyncSampleBox();
+      r.Skip(4);
+      uint entryCount = r.ReadUInt32BE();
+      box.Samples = new uint[entryCount];
+      for (int i = 0; i < entryCount; i++)
+        box.Samples[i] = r.ReadUInt32BE();
+      return box;
+    }
+
+    public static MP4_TimeToSampleBox ParseTimeToSample(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_TimeToSampleBox box = new MP4_TimeToSampleBox();
+      r.Skip(4);
+      uint entryCount = r.ReadUInt32BE();
+      box.Data = new (uint SampleCount, uint SampleDelta)[entryCount];
+      for (int i = 0; i < entryCount; i++)
+      {
+        box.Data[i].SampleCount = r.ReadUInt32BE();
+        box.Data[i].SampleDelta = r.ReadUInt32BE();
+      }
+      return box;
+    }
+
+    public static MP4_SampleDescriptionBox ParseSampleDescription(ReadOnlySpan<byte> buffer, MP4_HandlerType handlerType)
     {
       BinaryReader r = new BinaryReader(buffer);
       MP4_SampleDescriptionBox box = new MP4_SampleDescriptionBox(handlerType);
@@ -315,7 +555,7 @@ namespace VideoPlayer.Readers
       box.VertResolution = Parse1616Int(ref r);
       r.Skip(4);
       box.FrameCount = r.ReadUInt16BE();
-      box.CompressorName = r.ReadNextAsString(32);
+      box.CompressorName = r.ReadAsString(32);
       box.Depth = r.ReadUInt16BE();
       r.Skip(2);
       
@@ -359,10 +599,10 @@ namespace VideoPlayer.Readers
     {
       BinaryReader r = new BinaryReader(buffer);
       MP4_AVCConfigurationBox box = new MP4_AVCConfigurationBox();
-      box.Version = r.ReadNextByte();
-      box.AVCProfile = r.ReadNextByte();
-      box.AVCCompatibility = r.ReadNextByte();
-      box.AVCLevel = r.ReadNextByte();
+      box.Version = r.ReadByte();
+      box.AVCProfile = r.ReadByte();
+      box.AVCCompatibility = r.ReadByte();
+      box.AVCLevel = r.ReadByte();
       /*
        * This field is supposed to tell
        * us how many bytes to use to store the length of each NALU.
@@ -381,20 +621,20 @@ namespace VideoPlayer.Readers
        * https://stackoverflow.com/questions/24884827/possible-locations-for-sequence-picture-parameter-sets-for-h-264-stream
        * https://stackoverflow.com/questions/17541153/how-to-find-sps-and-pps-string-in-h264-codec-from-mp4
       */
-      box.NALULengthSize = (byte)(r.ReadNextByte() & 3 + 1);
-      byte SPS_NALU_COUNT = (byte)(r.ReadNextByte() & 31);
+      box.NALULengthSize = (byte)(r.ReadByte() & 3 + 1);
+      byte SPS_NALU_COUNT = (byte)(r.ReadByte() & 31);
       box.SPSData = new List<byte[]>(SPS_NALU_COUNT);
       for (int i = 0; i < SPS_NALU_COUNT; i++)
       {
         uint size = r.ReadUInt16BE();
-        box.SPSData.Add(r.ReadNext((int)size));
+        box.SPSData.Add(r.Read((int)size));
       }
-      byte PPS_NALU_COUNT = r.ReadNextByte();
+      byte PPS_NALU_COUNT = r.ReadByte();
       box.PPSData = new List<byte[]>(PPS_NALU_COUNT);
       for (int i = 0; i < PPS_NALU_COUNT; i++)
       {
         uint size = r.ReadUInt16BE();
-        box.PPSData.Add(r.ReadNext((int)size));
+        box.PPSData.Add(r.Read((int)size));
       }
       Debug.Assert(r.Pos == r.Len);
       return box;
@@ -471,12 +711,12 @@ namespace VideoPlayer.Readers
       BinaryReader r = new BinaryReader();
       (byte v, uint flags) header = ParseVersionAndFlags(ref r);
       MP4_EditListBox box = new MP4_EditListBox(header.v);
-      uint entryCount = r.ReadUInt32BE();
+      box.EntryCount = r.ReadUInt32BE();
       if (header.v == 0)
       {
-        MP4_EditListData32[] Data = new MP4_EditListData32[entryCount + 1];
+        MP4_EditListData32[] Data = new MP4_EditListData32[box.EntryCount + 1];
         // retarded arraays can sometime start at index 1
-        for (int i = 1; i <= entryCount; i++)
+        for (int i = 1; i <= box.EntryCount; i++)
         {
           MP4_EditListData32 d = new MP4_EditListData32();
           d.SegmentDuration = r.ReadUInt32BE();
@@ -489,9 +729,9 @@ namespace VideoPlayer.Readers
       }
       else
       {
-        MP4_EditListData64[] Data = new MP4_EditListData64[entryCount + 1];
+        MP4_EditListData64[] Data = new MP4_EditListData64[box.EntryCount + 1];
         // retarded arraays can sometime start at index 1
-        for (int i = 1; i <= entryCount; i++)
+        for (int i = 1; i <= box.EntryCount; i++)
         {
           MP4_EditListData64 d = new MP4_EditListData64();
           d.SegmentDuration = r.ReadUInt64BE();
@@ -591,7 +831,7 @@ namespace VideoPlayer.Readers
     {
       BinaryReader r = new BinaryReader(buffer);
       MP4_MediaDataBox box = new MP4_MediaDataBox();
-      box.Data = r.ReadNext(r.Len);
+      box.Data = r.Read(r.Len);
       return box;
     }
     public static MP4_FileTypeBox ParseFileBox(ReadOnlySpan<byte> buffer)
@@ -608,12 +848,12 @@ namespace VideoPlayer.Readers
     }
     public static (byte version, uint flags) ParseVersionAndFlags(ref BinaryReader r)
     {
-      byte v = r.ReadNextByte();
-      uint flags = r.ReadNextByte();
+      byte v = r.ReadByte();
+      uint flags = r.ReadByte();
       flags <<= 16;
-      flags |= r.ReadNextByte();
+      flags |= r.ReadByte();
       flags <<= 8;
-      flags |= r.ReadNextByte();
+      flags |= r.ReadByte();
       return (v, flags);
     }
     public static (uint size, MP4_BoxType type) ParseBoxHeader(ref BinaryReader r)

@@ -49,7 +49,7 @@
     sbgp = 1935828848,
     udta = 1969517665,
     name = 1851878757,
-
+    stts = 1937011827,
   }
 
   public enum MP4_FtypMajorBrand : uint
@@ -197,4 +197,8 @@
     InPreview
   }
 
+  public enum MP4_GroupingType
+  {
+    roll = 1919904876,
+  }
 }

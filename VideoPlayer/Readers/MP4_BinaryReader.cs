@@ -82,18 +82,18 @@ namespace VideoPlayer.Readers
       return Encoding.UTF8.GetString(_buffer.Slice(startPos, _readPos - startPos - 1));
     }
     public void Skip(int size) => _readPos += size;
-    public byte[] ReadNext(int size)
+    public byte[] Read(int size)
     {
       byte[] res = _buffer.Slice(_readPos, size).ToArray();
       _readPos += size;
       return res;
     }
-    public string ReadNextAsString(int size)
+    public string ReadAsString(int size)
     {
       string res = Encoding.UTF8.GetString(_buffer.Slice(_readPos, size));
       _readPos += size;
       return res;
     }
-    public byte ReadNextByte() => _buffer[_readPos++];
+    public byte ReadByte() => _buffer[_readPos++];
   }
 }

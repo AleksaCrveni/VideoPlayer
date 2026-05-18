@@ -1,5 +1,4 @@
-﻿using System.ComponentModel.Design;
-using VideoPlayer.Formats.ICC;
+﻿using VideoPlayer.Formats.ICC;
 using VideoPlayer.Readers;
 
 namespace VideoPlayer.Formats.MP4
@@ -203,7 +202,7 @@ namespace VideoPlayer.Formats.MP4
   {
     public MP4_EditListData64[]? Data64;
     public MP4_EditListData32[]? Data32;
-
+    public uint EntryCount;
     public MP4_EditListBox(byte v) : base(MP4_BoxType.elst, v, 0) { }
   }
 
@@ -342,17 +341,22 @@ namespace VideoPlayer.Formats.MP4
   public class MP4_SampleTableBox : MP4_Box
   {
     public MP4_SampleDescriptionBox Description;
-    public MP4_SyncSampleBox SyncSample;
-    public MP4_CompositionToSampleBox CTTS;
-    public MP4_SampleToChunkBox STTC;
+    public MP4_SyncSampleBox? SyncSample;
+    public MP4_TimeToSampleBox STTS;
+    public MP4_CompositionToSampleBox? CTTS;
+    public MP4_SampleToChunkBox STSC;
     public MP4_ISampleSizeBox SampleSize;
-    public MP4_SampleSizeBoxType SampleSizeType;
-    public List<MP4_SampleToGroupBox> SampleToGroups;
-    public List<MP4_SampleGroupDescriptionBox> GroupDescription; // should be one for each SampleToGroupEntry
-    public MP4_SampleTableBox() : base(MP4_BoxType.stbl)
-    {
-    }
+    public List<MP4_SampleToGroupBox> SampleToGroups = new List<MP4_SampleToGroupBox>(); // optional
+    public List<MP4_SampleGroupDescriptionBox> GroupDescriptions = new List<MP4_SampleGroupDescriptionBox>(); // optional
+    public MP4_SampleTableBox() : base(MP4_BoxType.stbl) { }
   }
+
+  public class MP4_TimeToSampleBox : MP4_FullBox
+  {
+    public (uint SampleCount, uint SampleDelta)[] Data;
+    public MP4_TimeToSampleBox() : base(MP4_BoxType.stts, 0, 0) { }
+  }
+
   public class MP4_SampleDescriptionBox : MP4_FullBox
   {
     public MP4_SampleEntry[] SampleEntries;
@@ -526,30 +530,42 @@ namespace VideoPlayer.Formats.MP4
   public class  MP4_SampleToChunkBox : MP4_FullBox
   {
     // put this in a class
-    public (uint FirstChunk, uint SamplesPerChunk, uint SampleDescriptionIndex) Data;
+    public (uint FirstChunk, uint SamplesPerChunk, uint SampleDescriptionIndex)[] Data;
+    public uint EntryCount;
     public MP4_SampleToChunkBox() : base(MP4_BoxType.stsc, 0, 0) { }
   }
 
-  public interface MP4_ISampleSizeBox { };
+  public interface MP4_ISampleSizeBox
+  {
+    public MP4_SampleSizeBoxType GetType();
+
+  }
   public class MP4_SampleSizeBox : MP4_FullBox, MP4_ISampleSizeBox
   {
     public uint SampleSize;
-    public uint[] SampleSizes;
+    public uint SampleCount;
+    public uint[]? SampleSizes; // this is null if samplesize is != 0
     public MP4_SampleSizeBox() : base(MP4_BoxType.stsz, 0, 0) { }
+    public new MP4_SampleSizeBoxType GetType() => (MP4_SampleSizeBoxType)Type;
   }
 
   public class MP4_CompactSampleSizeBox : MP4_FullBox, MP4_ISampleSizeBox
   {
     public byte FieldSize;
-    // variable........ CANCER
+    // make it uint becuase from normal samplesize
+    // I should change this if needed once i figure out how to use data
+    public uint[] SampleSizes;
+    public uint SampleCount; // actual len of sample sizes 
     public MP4_CompactSampleSizeBox() : base(MP4_BoxType.stz2, 0, 0) { }
+    public new MP4_SampleSizeBoxType GetType() => (MP4_SampleSizeBoxType)Type;
   }
 
   public class MP4_SampleToGroupBox : MP4_FullBox
   {
     public uint GroupingType;
     public uint GroupingTypeParameter;
-    public (uint SampleGroup, uint GroupDescriptionIndex)[] Entries;
+    public uint EntryCount; // actual size of entries 
+    public (uint SampleCount, uint GroupDescriptionIndex)[] Entries;
     public MP4_SampleToGroupBox(byte v) : base(MP4_BoxType.sbgp, v, 0) { }
   }
 
@@ -558,30 +574,47 @@ namespace VideoPlayer.Formats.MP4
   // eventually implement them per protocol eventually or something like that
   // At least thats how its defined in specification
   // Sequence Entry
-  public abstract class MP4_SampleGroupDescriptionEntry
+  public abstract class MP4_SampleGroupDescriptionEntry 
   {
-    public MP4_SampleGroupDescriptionEntry(uint GroupingType) { }
+    public MP4_GroupingType GroupingType;
+    public MP4_SampleGroupDescriptionEntry(MP4_GroupingType GroupingType)
+      => this.GroupingType = GroupingType;
   } // This should be an interface?
   public abstract class MP4_VisualSampleGroupEntry : MP4_SampleGroupDescriptionEntry
   {
-    public MP4_VisualSampleGroupEntry (uint GroupingType) : base(GroupingType) { }
+    public MP4_VisualSampleGroupEntry(MP4_GroupingType GroupingType) : base(GroupingType) { }
   }
   public abstract class MP4_AudioSampleGroupEntry : MP4_SampleGroupDescriptionEntry
   {
-    public MP4_AudioSampleGroupEntry(uint GroupingType) : base(GroupingType) { }
+    public MP4_AudioSampleGroupEntry(MP4_GroupingType GroupingType) : base(GroupingType) { }
   }
   public abstract class MP4_HintSampleGroupEntry : MP4_SampleGroupDescriptionEntry
   {
-    public MP4_HintSampleGroupEntry(uint GroupingType) : base(GroupingType) { }
+    public MP4_HintSampleGroupEntry(MP4_GroupingType GroupingType) : base(GroupingType) { }
+  }
+  public class MP4_VisualRollSampleGroupEntryBox : MP4_VisualSampleGroupEntry
+  {
+    public short RollDistance;
+    public MP4_VisualRollSampleGroupEntryBox(MP4_GroupingType GroupingType) : base(GroupingType) { }
+  }
+  public class MP4_AudioRollSampleGroupEntryBox : MP4_AudioSampleGroupEntry
+  {
+    public short RollDistance;
+    public MP4_AudioRollSampleGroupEntryBox(MP4_GroupingType GroupingType) : base(GroupingType) { }
   }
 
   public class MP4_SampleGroupDescriptionBox : MP4_FullBox
   {
-    public uint GroupingType;
+    public MP4_GroupingType GroupingType;
     public uint DefaultLength;
     public uint EntryCount;
+    // not necessary but nice to have
+    public MP4_HandlerType HandlerType; 
     public MP4_SampleGroupDescriptionEntry[] Entries;
-    public MP4_SampleGroupDescriptionBox(byte v) : base(MP4_BoxType.sgpd, v, 0) { }
+    public MP4_SampleGroupDescriptionBox(byte v, MP4_HandlerType handlerType) : base(MP4_BoxType.sgpd, v, 0)
+    {
+      HandlerType = handlerType;
+    }
   }
 
   public class MP4_UserDataBox : MP4_Box
