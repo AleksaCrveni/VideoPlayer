@@ -190,15 +190,16 @@
     stz2 = 1937013298,
   }
 
+  [Flags]
   public enum MP4_TrackStatus
   {
-    Enabled,
-    InMovie,
-    InPreview
+    Enabled = 1,
+    InMovie = 2,
+    InPreview = 4,
   }
 
   public enum MP4_GroupingType
   {
-    roll = 1919904876,
+    roll = 1919904876, MP4_TrackStatus
   }
 }

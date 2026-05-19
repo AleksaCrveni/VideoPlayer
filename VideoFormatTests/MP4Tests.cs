@@ -1,4 +1,6 @@
 ﻿using VideoPlayer;
+using VideoPlayer.Formats.MP4;
+using VideoPlayer.Readers;
 
 namespace VideoFormatTests
 {
@@ -8,7 +10,7 @@ namespace VideoFormatTests
     [TestMethod]
     public void HD_LessThan10MB()
     {
-      Stream stream = File.OpenRead(Files.HD_LessThan10MB_MP4);
+      MP4File file = MP4Reader.Parse(Files.HD_LessThan10MB_MP4);
     }
   }
 }

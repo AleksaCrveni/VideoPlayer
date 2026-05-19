@@ -147,7 +147,6 @@ namespace VideoPlayer.Formats.MP4
 
   public class MP4_TrackHeaderBox : MP4_FullBox
   {
-    public MP4_TrackStatus Status;
     public MP4_TrackHeaderVData64 Data64;
     public MP4_TrackHeaderVData32 Data32;
     public short Layer;
@@ -165,14 +164,8 @@ namespace VideoPlayer.Formats.MP4
       else
         throw new InvalidDataException("Version supported!");
 
-      if (f == 1)
-        Status = MP4_TrackStatus.Enabled;
-      else if (f == 2)
-        Status = MP4_TrackStatus.InMovie;
-      else if (f == 4)
-        Status = MP4_TrackStatus.InPreview;
-      else
-        throw new InvalidDataException("Invalid Flag for Track Header!");
+      if (f > 7)
+        throw new InvalidDataException("Unsupporter status flag combination!");
     }
   }
 
@@ -320,7 +313,8 @@ namespace VideoPlayer.Formats.MP4
 
   public class MP4_DataReferenceBox : MP4_FullBox
   {
-    IDataEntry[] Entries;
+    public uint EntryCount;
+    public IDataEntry[] Entries;
     public MP4_DataReferenceBox() : base(MP4_BoxType.dref, 0, 0) { }
   }
 

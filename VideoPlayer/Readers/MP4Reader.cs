@@ -1,11 +1,6 @@
-﻿
-using Microsoft.VisualBasic;
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.Design;
-using System.Diagnostics;
-using System.Reflection.Metadata.Ecma335;
-using System.Reflection.PortableExecutable;
-using System.Runtime.ExceptionServices;
+﻿using System.Diagnostics;
+using System.Drawing;
+using System.Linq.Expressions;
 using VideoPlayer.Formats.MP4;
 
 namespace VideoPlayer.Readers
@@ -18,6 +13,7 @@ namespace VideoPlayer.Readers
       MP4File file = new MP4File();
       byte[] bytes = File.ReadAllBytes(path);
       ParseFromRoot(file, bytes);
+      return file;
     }
 
     public static void ParseFromRoot(MP4File file, ReadOnlySpan<byte> buffer)
@@ -45,6 +41,9 @@ namespace VideoPlayer.Readers
             break;
           case MP4_BoxType.pdin:
             file.PDownloadInfo = ParsePDownloadInfo(boxData);
+            break;
+          case MP4_BoxType.free:
+          case MP4_BoxType.skip:
             break;
           default:
             throw new InvalidDataException($"Unknown box type: {Header.type.ToString()}");
@@ -217,6 +216,9 @@ namespace VideoPlayer.Readers
           case MP4_BoxType.stbl:
             box.SampleTable = ParseSampleTable(boxData, handlerType);
             break;
+          case MP4_BoxType.dinf:
+            box.DataInfo = ParseDataInformation(boxData);
+            break;
           default:
             throw new InvalidDataException($"Unknown box type: {Header.type.ToString()}");
         }
@@ -224,6 +226,85 @@ namespace VideoPlayer.Readers
         r.Skip(noHeaderLen);
         Header = ParseBoxHeader(ref r);
       }
+      return box;
+    }
+
+    public static MP4_DataInformationBox ParseDataInformation(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_DataInformationBox box = new MP4_DataInformationBox();
+      (uint size, MP4_BoxType type) Header = ParseBoxHeader(ref r);
+      int noHeaderLen = (int)Header.size - 8;
+      if (noHeaderLen == -8)
+        noHeaderLen = r.Len - r.Pos;
+      ReadOnlySpan<byte> boxData = buffer.Slice(r.Pos, noHeaderLen);
+      if (Header.type != MP4_BoxType.dref)
+        throw new InvalidDataException($"Invalid data reference box type: {Header.type.ToString()}");
+      box.DataReference = ParseDataReference(boxData);
+      return box;
+    }
+    public static MP4_DataReferenceBox ParseDataReference(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_DataReferenceBox box = new MP4_DataReferenceBox();
+      r.Skip(4);
+      box.EntryCount = r.ReadUInt32BE();
+      box.Entries = new IDataEntry[box.EntryCount + 1];
+      ReadOnlySpan<byte> boxData;
+      for (int i = 1; i <= box.EntryCount; i++)
+      {
+        (uint size, MP4_BoxType type) Header = ParseBoxHeader(ref r);
+        int noHeaderLen = (int)Header.size - 8;
+        if (noHeaderLen == -8)
+          noHeaderLen = r.Len - r.Pos;
+        boxData = buffer.Slice(r.Pos, noHeaderLen);
+        switch (Header.type)
+        {
+          case MP4_BoxType.url:
+            box.Entries[i] = ParseUrlDataEntry(boxData);
+            break;
+          case MP4_BoxType.urn:
+            break;
+          default:
+            throw new InvalidDataException($"Invalid data entry type for data reference: {Header.type.ToString()}");
+        }
+
+      }
+      return box;
+    }
+
+    public static MP4_DataEntryUrnBox ParseUrnDataEntry(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      (byte v, uint flags) header = ParseVersionAndFlags(ref r);
+      MP4_DataEntryUrnBox box = new MP4_DataEntryUrnBox(header.flags);
+      if (header.flags == 1) // self contained flag
+      {
+        Debug.Assert(r.Pos == r.Len); // make sure we didnt miss string 
+        box.Location = string.Empty;
+        box.Name = string.Empty;
+      }
+      else
+      {
+        box.Name = r.ReadNullTerminatedString();
+        box.Location = r.ReadNullTerminatedString();
+      }
+      return box;
+    }
+    public static MP4_DataEntryUrlBox ParseUrlDataEntry(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      (byte v, uint flags) header = ParseVersionAndFlags(ref r);
+      MP4_DataEntryUrlBox box = new MP4_DataEntryUrlBox(header.flags);
+      if (header.flags == 1) // self contained flag
+      {
+        Debug.Assert(r.Pos == r.Len); // make sure we didnt miss string 
+        box.Location = string.Empty;
+      }
+      else
+      {
+        box.Location = r.ReadNullTerminatedString();
+      } 
       return box;
     }
 
@@ -288,7 +369,7 @@ namespace VideoPlayer.Readers
       MP4_SampleGroupDescriptionBox box = new MP4_SampleGroupDescriptionBox(header.v, handlerType);
       box.GroupingType = (MP4_GroupingType)r.ReadUInt32BE();
       if (!Enum.IsDefined(box.GroupingType))
-        throw new InvalidDataException($"Unkown grouping type: {box.GroupingType.ToString()}")
+        throw new InvalidDataException($"Unkown grouping type: {box.GroupingType.ToString()}");
       if (header.v == 1)
         box.DefaultLength = r.ReadUInt32BE();
       box.EntryCount = r.ReadUInt32BE();
@@ -708,7 +789,7 @@ namespace VideoPlayer.Readers
     }
     public static MP4_EditListBox ParseEditList(ReadOnlySpan<byte> buffer)
     {
-      BinaryReader r = new BinaryReader();
+      BinaryReader r = new BinaryReader(buffer);
       (byte v, uint flags) header = ParseVersionAndFlags(ref r);
       MP4_EditListBox box = new MP4_EditListBox(header.v);
       box.EntryCount = r.ReadUInt32BE();
@@ -897,18 +978,23 @@ namespace VideoPlayer.Readers
       => ISOParser.ParseFixed1616(r.ReadInt32BE());
     public static double Parse88Int(ref BinaryReader r)
       => ISOParser.ParseFixed88(r.ReadInt16BE());
+    public static double Parse230Int(ref BinaryReader r)
+      => ISOParser.ParseFixed0230(r.ReadInt32BE());
     public static double[,] ParseMatrix(ref BinaryReader r)
     {
+      //All the values in a matrix are stored as 16.16 fixed-point values,
+      // except for u, v and w, which are stored as 2.30 fixed-point values.
+      // The values in the matrix are stored in the order { a,b,u, c,d,v, x,y,w}.
       double[,] matrix = new double[3, 3];
       matrix[0, 0] = Parse1616Int(ref r);
       matrix[0, 1] = Parse1616Int(ref r);
-      matrix[0, 2] = Parse1616Int(ref r);
+      matrix[0, 2] = Parse230Int(ref r);
       matrix[1, 0] = Parse1616Int(ref r);
       matrix[1, 1] = Parse1616Int(ref r);
-      matrix[1, 2] = Parse1616Int(ref r);
+      matrix[1, 2] = Parse230Int(ref r);
       matrix[2, 0] = Parse1616Int(ref r);
       matrix[2, 1] = Parse1616Int(ref r);
-      matrix[2, 2] = Parse1616Int(ref r);
+      matrix[2, 2] = Parse230Int(ref r);
       return matrix;
     }
   }
