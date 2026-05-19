@@ -10,7 +10,7 @@ namespace VideoPlayer.Formats.MP4
     public MP4_MovieBox Movie;
     public MP4_ProgressiveDownloadInfoBox PDownloadInfo;
   }
-   
+
   // we dont need to store size since we will read all data into boxes during parsing
   public class MP4_Box
   {
@@ -339,6 +339,7 @@ namespace VideoPlayer.Formats.MP4
     public MP4_TimeToSampleBox STTS;
     public MP4_CompositionToSampleBox? CTTS;
     public MP4_SampleToChunkBox STSC;
+    public MP4_IChunkOffsets ChunkOffsets;
     public MP4_ISampleSizeBox SampleSize;
     public List<MP4_SampleToGroupBox> SampleToGroups = new List<MP4_SampleToGroupBox>(); // optional
     public List<MP4_SampleGroupDescriptionBox> GroupDescriptions = new List<MP4_SampleGroupDescriptionBox>(); // optional
@@ -353,6 +354,7 @@ namespace VideoPlayer.Formats.MP4
 
   public class MP4_SampleDescriptionBox : MP4_FullBox
   {
+    public uint EntryCount;
     public MP4_SampleEntry[] SampleEntries;
     public MP4_HandlerType HandlerType;
     public MP4_SampleDescriptionBox(MP4_HandlerType handlerType) : base(MP4_BoxType.stsd, 0, 0)
@@ -521,7 +523,7 @@ namespace VideoPlayer.Formats.MP4
     }
   }
 
-  public class  MP4_SampleToChunkBox : MP4_FullBox
+  public class MP4_SampleToChunkBox : MP4_FullBox
   {
     // put this in a class
     public (uint FirstChunk, uint SamplesPerChunk, uint SampleDescriptionIndex)[] Data;
@@ -568,7 +570,7 @@ namespace VideoPlayer.Formats.MP4
   // eventually implement them per protocol eventually or something like that
   // At least thats how its defined in specification
   // Sequence Entry
-  public abstract class MP4_SampleGroupDescriptionEntry 
+  public abstract class MP4_SampleGroupDescriptionEntry
   {
     public MP4_GroupingType GroupingType;
     public MP4_SampleGroupDescriptionEntry(MP4_GroupingType GroupingType)
@@ -603,7 +605,7 @@ namespace VideoPlayer.Formats.MP4
     public uint DefaultLength;
     public uint EntryCount;
     // not necessary but nice to have
-    public MP4_HandlerType HandlerType; 
+    public MP4_HandlerType HandlerType;
     public MP4_SampleGroupDescriptionEntry[] Entries;
     public MP4_SampleGroupDescriptionBox(byte v, MP4_HandlerType handlerType) : base(MP4_BoxType.sgpd, v, 0)
     {
@@ -623,5 +625,25 @@ namespace VideoPlayer.Formats.MP4
     public MP4_NameBox() : base(MP4_BoxType.name)
     {
     }
+  }
+
+  public interface MP4_IChunkOffsets
+  {
+    public MP4_BoxType GetType();
+  }
+
+  public class MP4_ChunkOffsetBox : MP4_FullBox, MP4_IChunkOffsets
+  {
+    public uint EntryCount;
+    public uint[] ChunkOffsets;
+    public MP4_ChunkOffsetBox() : base(MP4_BoxType.stco, 0, 0) { }
+    public new MP4_BoxType GetType() => Type;
+  }
+  public class MP4_ChunkLargeOffsetBox : MP4_FullBox, MP4_IChunkOffsets
+  {
+    public uint EntryCount;
+    public ulong[] ChunkOffsets;
+    public MP4_ChunkLargeOffsetBox() : base(MP4_BoxType.co64, 0, 0) { }
+    public new MP4_BoxType GetType() => Type;
   }
 }

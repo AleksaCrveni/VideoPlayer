@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq.Expressions;
 using VideoPlayer.Formats.MP4;
@@ -349,6 +350,12 @@ namespace VideoPlayer.Readers
           case MP4_BoxType.sgpd:
             box.GroupDescriptions.Add(ParseSampleGroupDescription(boxData, handlerType));
             break;
+          case MP4_BoxType.stco:
+            box.ChunkOffsets = ParseChunkOffsets(boxData);
+            break;
+          case MP4_BoxType.co64:
+            box.ChunkOffsets = ParseLargeChunkOffsets(boxData);
+            break;
           default:
             throw new InvalidDataException($"Unknown box type: {Header.type.ToString()}");
         }
@@ -362,6 +369,32 @@ namespace VideoPlayer.Readers
       return box;
     }
 
+    public static MP4_ChunkOffsetBox ParseChunkOffsets(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_ChunkOffsetBox box = new MP4_ChunkOffsetBox();
+      r.Skip(4);
+      box.EntryCount = r.ReadUInt32BE();
+      box.ChunkOffsets = new uint[box.EntryCount + 1];
+      for (int i = 1; i <= box.EntryCount; i++)
+      {
+        box.ChunkOffsets[i] = r.ReadUInt32BE();
+      }
+      return box;
+    }
+    public static MP4_ChunkLargeOffsetBox ParseLargeChunkOffsets(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_ChunkLargeOffsetBox box = new MP4_ChunkLargeOffsetBox();
+      r.Skip(4);
+      box.EntryCount = r.ReadUInt32BE();
+      box.ChunkOffsets = new ulong[box.EntryCount + 1];
+      for (int i = 1; i <= box.EntryCount; i++)
+      {
+        box.ChunkOffsets[i] = r.ReadUInt64BE();
+      }
+      return box;
+    }
     public static MP4_SampleGroupDescriptionBox ParseSampleGroupDescription(ReadOnlySpan<byte> buffer, MP4_HandlerType handlerType)
     {
       BinaryReader r = new BinaryReader(buffer);
@@ -579,10 +612,10 @@ namespace VideoPlayer.Readers
       BinaryReader r = new BinaryReader(buffer);
       MP4_SampleDescriptionBox box = new MP4_SampleDescriptionBox(handlerType);
       r.Skip(4);
-      uint entryCount = r.ReadUInt32BE();
-      MP4_SampleEntry[] sampleEntries = new MP4_SampleEntry[entryCount];
+      box.EntryCount = r.ReadUInt32BE();
+      MP4_SampleEntry[] sampleEntries = new MP4_SampleEntry[box.EntryCount + 1];
       ReadOnlySpan<byte> boxData;
-      for (int i = 0; i <= entryCount; i++)
+      for (int i = 1; i <= box.EntryCount; i++)
       {
         uint boxSize = r.ReadUInt32BE();
         int noSizeBoxLen = (int)boxSize - 4;
@@ -607,7 +640,6 @@ namespace VideoPlayer.Readers
           // not sure if NULL is required to be instancieeted
           default:
             throw new InvalidDataException("Unknown HandlerType!");
-            break;
         }
         r.Skip(noSizeBoxLen);
       }
@@ -621,7 +653,7 @@ namespace VideoPlayer.Readers
     /// <returns></returns>
     public static MP4_SampleEntry ParseVisualSampleEntry(ReadOnlySpan<byte> buffer)
     {
-      BinaryReader r = new BinaryReader();
+      BinaryReader r = new BinaryReader(buffer);
       MP4_CodingType codecType = (MP4_CodingType)r.ReadUInt32BE();
       if (!Enum.IsDefined(codecType))
         throw new InvalidDataException("Unknown codec!");
@@ -663,7 +695,7 @@ namespace VideoPlayer.Readers
           case MP4_BoxType.avcC:
             if (codecType != MP4_CodingType.avc1)
               throw new InvalidDataException($"Uknown extra sample data: {Header.type.ToString()} for avc1");
-            box.SampleExtraData = ParseAVCConfigurationBox(buffer);
+            box.SampleExtraData = ParseAVCConfigurationBox(boxData);
             break;
           default:
             throw new InvalidDataException($"Uknown extra sample data: {Header.type.ToString()}");

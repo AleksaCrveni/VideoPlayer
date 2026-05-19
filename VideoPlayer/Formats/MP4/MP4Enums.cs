@@ -50,6 +50,8 @@
     udta = 1969517665,
     name = 1851878757,
     stts = 1937011827,
+    stco = 1937007471,
+    co64 = 1668232756,
   }
 
   public enum MP4_FtypMajorBrand : uint
