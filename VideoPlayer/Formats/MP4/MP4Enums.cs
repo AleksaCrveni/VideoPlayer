@@ -52,6 +52,8 @@
     stts = 1937011827,
     stco = 1937007471,
     co64 = 1668232756,
+    esds = 1702061171,
+    mp4a = 1836069985,
   }
 
   public enum MP4_FtypMajorBrand : uint
@@ -181,9 +183,10 @@
     prof = 1886547814,
   }
 
-  public enum MP4_CodingType
+  public enum MP4_Codec
   {
     avc1 = 1635148593, // H.264/AVC
+    mp4a = 1836069985, // audio codec AAC
   }
 
   public enum MP4_SampleSizeBoxType
@@ -204,4 +207,74 @@
   {
     roll = 1919904876, MP4_TrackStatus
   }
+
+  //DecoderConfigDescriptor
+  public enum MP4_DCD_ObjType
+  {
+    ISO_14496_3 = 0x40,         // MPEG4 AAC
+    ISO_13818_7_AAC_LC = 0x67,  // MPEG2 AAC-LC
+    AC3 = 0xa5,                 // AC3
+    EAC3 = 0xa6,                // EAC3 / Dolby Digital Plus
+    DTS = 0xa9,                 // DTS
+    DTSE = 0xac,                // DTS Express/LBR
+    DTSX = 0xb2,                // DTS:X
+    AC4 = 0xae                  // AC4
+  }
+  // special description tags for DCD
+  public enum MP4_DCD_Spec
+  {
+    ESDescrTag = 0x03,
+    DecoderConfigDescrTag = 0x04,
+    DecoderSpecificInfoTag = 0x05
+  }
+
+  public enum MP4_DCD_StreamType
+  {
+    ObjectDescriptorStream = 0x01,
+    ClockReferenceStream  = 0x02,
+    SceneDescriptionStream  = 0x03,
+    VisualStream = 0x04,
+    AudioStream = 0x05,
+    MPEG7Stream = 0x06,
+    IPMPStream  = 0x07,
+    ObjectContentInfoStream  = 0x08,
+    MPEGJStream = 0x09,
+  }
+  // for reference 
+  public enum MP4_DescriptorTags
+  {
+    Forbidden = 0x00,
+    ObjectDescrTag = 0x01,
+    InitialObjectDescrTag = 0x02,
+    ES_DescrTag = 0x03,
+    DecoderConfigDescrTag = 0x04,
+    DecSpecificInfoTag = 0x05,
+    SLConfigDescrTag = 0x06,
+    ContentIdentDescrTag = 0x07,
+    SupplContentIdentDescrTag = 0x08,
+    IPI_DescrPointerTag = 0x09,
+    IPMP_DescrPointerTag = 0x0A,
+    IPMP_DescrTag = 0x0B,
+    QoS_DescrTag = 0x0C,
+    RegistrationDescrTag = 0x0D,
+    ES_ID_IncTag = 0x0E,
+    ES_ID_RefTag = 0x0F,
+    MP4_IOD_Tag = 0x10,
+    MP4_OD_Tag = 0x11,
+    IPL_DescrPointerRefTag = 0x12,
+    ExtendedProfileLevelDescrTag = 0x13,
+    profileLevelIndicationIndexDescrTag = 0x14,
+    ContentClassificationDescrTag = 0x40,
+    KeyWordDescrTag = 0x41,
+    RatingDescrTag = 0x42,
+    LanguageDescrTag = 0x43,
+    ShortTextualDescrTag = 0x44,
+    ExpandedTextualDescrTag = 0x45,
+    ContentCreatorNameDescrTag = 0x46,
+    ContentCreationDateDescrTag = 0x47,
+    OCICreatorNameDescrTag = 0x48,
+    OCICreationDateDescrTag = 0x49,
+    SmpteCameraPositionDescrTag = 0x4,
+  }
+
 }

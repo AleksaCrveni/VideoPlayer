@@ -1,7 +1,10 @@
-﻿using System.ComponentModel;
+﻿using System.Buffers.Binary;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq.Expressions;
+using System.Reflection;
+using System.Text;
 using VideoPlayer.Formats.MP4;
 
 namespace VideoPlayer.Readers
@@ -626,7 +629,7 @@ namespace VideoPlayer.Readers
         switch (handlerType)
         {
           case MP4_HandlerType.soun:
-            throw new NotImplementedException();
+            sampleEntries[i] = ParseAudioVisualEntry(boxData);
             break;
           case MP4_HandlerType.vide:
             sampleEntries[i] = ParseVisualSampleEntry(boxData);
@@ -645,16 +648,134 @@ namespace VideoPlayer.Readers
       }
       return box;
     }
+
+    public static MP4_SampleEntry ParseAudioVisualEntry(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_Codec codecType = (MP4_Codec)r.ReadUInt32BE();
+      if (!Enum.IsDefined(codecType))
+        throw new InvalidDataException("Unknown codec!");
+      MP4_AudioSampleEntryBox box = new MP4_AudioSampleEntryBox((MP4_BoxType)codecType);
+      r.Skip(6); // skip 6 resevred from SampleEntry default
+      box.DataReferenceIndex = r.ReadUInt16BE();
+      r.Skip(8);
+      box.ChannelCount = r.ReadUInt16BE();
+      box.SampleSize = r.ReadUInt16BE();
+      r.Skip(4);
+      box.SampleRate = r.ReadUInt32BE();
+      if (r.Pos >= r.Len)
+        return box;
+
+      ReadOnlySpan<byte> boxData;
+      (uint size, MP4_BoxType type) Header = ParseBoxHeader(ref r);
+      while (Header.type != 0)
+      {
+        int noHeaderLen = (int)Header.size - 8;
+        if (noHeaderLen == -8)
+          noHeaderLen = r.Len - r.Pos;
+        boxData = buffer.Slice(r.Pos, noHeaderLen);
+        switch (Header.type)
+        {
+          case MP4_BoxType.esds:
+            if (codecType != MP4_Codec.mp4a)
+              throw new InvalidDataException($"Uknown extra sample data: {Header.type.ToString()} for avc1");
+            box.SampleExtraData = ParseAVCConfigurationBox(boxData);
+            break;
+          default:
+            throw new InvalidDataException($"Uknown extra sample data: {Header.type.ToString()}");
+        }
+        // this just is so we have bounded box data and size is size of the total box including the header
+        r.Skip(noHeaderLen);
+        Header = ParseBoxHeader(ref r);
+      }
+
+      return box;
+    }
+
+    public static MP4_ESDSBox ParseESDSBox(ReadOnlySpan<byte> buffer)
+    {
+      BinaryReader r = new BinaryReader(buffer);
+      MP4_ESDSBox box = new MP4_ESDSBox();
+      r.Skip(4);
+      MP4_DCD_Spec descTag = (MP4_DCD_Spec)r.ReadByte();
+
+      if (descTag != MP4_DCD_Spec.ESDescrTag)
+        throw new InvalidDataException("Invalid descrption tag for ESDS Box");
+      uint size = ReadESSize(ref r);
+      if (size > buffer.Length)
+        throw new InvalidDataException("Invalid size read for ESDSbox");
+      box.ES_Descriptor = new MP4_ESDescriptor();
+      box.ES_Descriptor.ES_ID = r.ReadUInt16BE();
+      byte flags = r.ReadByte();
+      box.ES_Descriptor.StreamDependence = flags >> 7 == 1;
+      box.ES_Descriptor.URL = flags >> 6 == 1;
+      box.ES_Descriptor.OCRStream = flags >> 5 == 1;
+      box.ES_Descriptor.StreamPriority = (byte)(flags & 31);
+      if (box.ES_Descriptor.StreamDependence)
+        box.ES_Descriptor.DependsOnES_ID = r.ReadUInt16BE();
+      if (box.ES_Descriptor.URL)
+      {
+        byte len = r.ReadByte();
+        if (len != 0)
+        {
+          box.ES_Descriptor.URLString = r.ReadAsString(len);
+        }
+      }
+      if (box.ES_Descriptor.OCRStream)
+        box.ES_Descriptor.OCR_ES_ID = r.ReadUInt16BE();
+
+      if (r.Pos == r.Len)
+        return box;
+
+      box.ES_Descriptor.DecoderConfig = ParseDecoderConfigDescriptor(ref r);
+      if (r.Pos == r.Len)
+        return box;
+
+      descTag = (MP4_DCD_Spec)r.ReadByte();
+      if (descTag != MP4_DCD_Spec.DecoderSpecificInfoTag)
+        throw new InvalidDataException("Invalid descrption tag for ESDS Box");
+      size = ReadESSize(ref r);
+      if (size == 0)
+        box.ES_Descriptor.DecoderSpecificInfo = Array.Empty<byte>();
+      else
+        box.ES_Descriptor.DecoderSpecificInfo = r.Read((int)size);
+      return box;
+    }
+
+    public static MP4_DecoderConfigDescriptor ParseDecoderConfigDescriptor(ref BinaryReader r)
+    {
+      MP4_DCD_Spec DescTag = (MP4_DCD_Spec)r.ReadByte();
+      if (DescTag != MP4_DCD_Spec.DecoderConfigDescrTag)
+        throw new InvalidDataException("Invalid descrption tag for ESDS Box");
+      uint size = ReadESSize(ref r);
+      if (size > r.Len)
+        throw new InvalidDataException("Invalid size read for ESDSbox");
+
+      MP4_DecoderConfigDescriptor box = new MP4_DecoderConfigDescriptor();
+      box.ObjTypeIndication = (MP4_DCD_ObjType)r.ReadByte();
+      if (!Enum.IsDefined(box.ObjTypeIndication))
+        throw new InvalidDataException("Invalid objtype indication");
+
+      byte b = r.ReadByte();
+      box.StreamType = (MP4_DCD_StreamType)(b >> 2);
+      if (!Enum.IsDefined(box.StreamType))
+        throw new InvalidDataException("Invalid StreamType!");
+      box.UpStream = b >> 1 == 1;
+      box.BufferSizeDB = ParseUIntFrom3Ints(ref r);
+      box.MaxBitrate = r.ReadUInt32BE();
+      box.AvgBitrate = r.ReadUInt32BE();
+      return box;
+    }
     /// <summary>
     /// Buffer starts after size entry just before the name of the codec
     /// so first 32bit read woul be codec name
     /// </summary>
     /// <param name="buffer"></param>
     /// <returns></returns>
-    public static MP4_SampleEntry ParseVisualSampleEntry(ReadOnlySpan<byte> buffer)
+    public static MP4_VisualSampleEntryBox ParseVisualSampleEntry(ReadOnlySpan<byte> buffer)
     {
       BinaryReader r = new BinaryReader(buffer);
-      MP4_CodingType codecType = (MP4_CodingType)r.ReadUInt32BE();
+      MP4_Codec codecType = (MP4_Codec)r.ReadUInt32BE();
       if (!Enum.IsDefined(codecType))
         throw new InvalidDataException("Unknown codec!");
       // this cast is guaranteed
@@ -693,13 +814,12 @@ namespace VideoPlayer.Readers
             throw new NotImplementedException();
             break;
           case MP4_BoxType.avcC:
-            if (codecType != MP4_CodingType.avc1)
+            if (codecType != MP4_Codec.avc1)
               throw new InvalidDataException($"Uknown extra sample data: {Header.type.ToString()} for avc1");
             box.SampleExtraData = ParseAVCConfigurationBox(boxData);
             break;
           default:
             throw new InvalidDataException($"Uknown extra sample data: {Header.type.ToString()}");
-            break;
         }
         // this just is so we have bounded box data and size is size of the total box including the header
         r.Skip(noHeaderLen);
@@ -978,7 +1098,12 @@ namespace VideoPlayer.Readers
       Debug.Assert(r.Pos < r.Len);
       MP4_BoxType bType = (MP4_BoxType)r.ReadUInt32BE();
       if (!Enum.IsDefined(bType))
-        throw new NotImplementedException($"{(int)bType} boxType not found!");
+      {
+        Span<byte> buff = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(buff, (int)bType);
+        throw new NotImplementedException($"{Encoding.Default.GetString(buff)} boxType not found!");
+      }
+        
       return (size, bType);
     }
     public static T[] GetNumList<T>(ref BinaryReader r, int count) where T : struct, Enum
@@ -1028,6 +1153,34 @@ namespace VideoPlayer.Readers
       matrix[2, 1] = Parse1616Int(ref r);
       matrix[2, 2] = Parse230Int(ref r);
       return matrix;
+    }
+
+    public static uint ReadESSize(ref BinaryReader r)
+    {
+      byte val;
+      byte MSB;
+      uint result = 0;
+      for (int i = 0; i < 4; i++)
+      {
+        val = r.ReadByte();
+        MSB = (byte)(val >> 7);
+        result = (result << 7) + (byte)(val & 127);
+        if (MSB == 0)
+          break;
+      }
+
+      return result;
+    }
+
+    public static uint ParseUIntFrom3Ints(ref BinaryReader r)
+    {
+      uint res = 0;
+      res |= r.ReadByte();
+      res <<= 8;
+      res |= r.ReadByte();
+      res <<= 8;
+      res |= r.ReadByte();
+      return res;
     }
   }
 }

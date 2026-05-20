@@ -497,12 +497,12 @@ namespace VideoPlayer.Formats.MP4
     public MP4_VisualSampleEntryBox(MP4_BoxType codingname) : base(codingname) { }
   }
 
-  public class MP4_AudioSamplEntryBox : MP4_SampleEntry
+  public class MP4_AudioSampleEntryBox : MP4_SampleEntry
   {
     public ushort ChannelCount;
     public ushort SampleSize;
     public double SampleRate = ISOParser.ParseFixed1616((48000 / 256) << 16); // idfk if this irght
-    public MP4_AudioSamplEntryBox(MP4_BoxType codingName) : base(codingName) { }
+    public MP4_AudioSampleEntryBox(MP4_BoxType codingName) : base(codingName) { }
   }
 
   public class MP4_SyncSampleBox : MP4_FullBox
@@ -646,4 +646,34 @@ namespace VideoPlayer.Formats.MP4
     public MP4_ChunkLargeOffsetBox() : base(MP4_BoxType.co64, 0, 0) { }
     public new MP4_BoxType GetType() => Type;
   }
+  public class MP4_ESDSBox : MP4_FullBox, MP4_ICodecCustomBox
+  {
+    public MP4_ESDescriptor ES_Descriptor;
+    public MP4_ESDSBox() : base(MP4_BoxType.esds, 0, 0) { }
+  }
+
+  public class MP4_ESDescriptor
+  {
+    public uint ES_ID;
+    public bool StreamDependence;
+    public bool URL;
+    public bool OCRStream;
+    public byte StreamPriority;
+    public ushort DependsOnES_ID;
+    public string URLString;
+    public ushort OCR_ES_ID;
+    public MP4_DecoderConfigDescriptor? DecoderConfig;
+    public byte[] DecoderSpecificInfo;
+  }
+
+  public class MP4_DecoderConfigDescriptor
+  {
+    public MP4_DCD_ObjType ObjTypeIndication;
+    public MP4_DCD_StreamType StreamType;
+    public bool UpStream;
+    public uint BufferSizeDB; // 3 bytes
+    public uint MaxBitrate;
+    public uint AvgBitrate;
+  }
+
 }
